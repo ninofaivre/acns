@@ -81,46 +81,51 @@ const Message = struct {
 
 fn parseMessage(message: []const u8) !Message {
     var tail = message;
-    const endTableNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.WrongMessage;
+
+    const endTableNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.TableNameNotFound;
     const tableName = tail[0..endTableNameIdx];
+    if (tableName.len == 0) return error.TableNameTooShort;
+    if (tableName.len > 63) return error.TableNameTooLong;
     tail = tail[(endTableNameIdx + 1)..];
-    const endSetNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.WrongMessage;
+
+    const endSetNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.SetNameNotFound;
     const setName = tail[0..endSetNameIdx];
+    if (setName.len == 0) return error.SetNameTooShort;
+    if (setName.len > 63) return error.SetNameTooLong;
     tail = tail[(endTableNameIdx + 1)..];
-    if (tail.len != 5 and tail.len != 4) return error.WrongMessage;
-    const ip: u32 = std.mem.readInt(u32, tail[0..4], std.builtin.Endian.little);
+
+    if (tail.len == 0) return error.IpNotFound;
+    if (tail[tail.len - 1] == '\x00') tail = tail[0 .. tail.len - 1]; // remove trailing \0
+    // TODO handle ipv6 (can be discriminated by size)
+    if (tail.len < 4) return error.IpTooShort;
+    if (tail.len > 4) return error.IpTooLong;
+    const ip: u32 = std.mem.readInt(u32, tail, std.builtin.Endian.little);
 
     return .{ .tableName = @ptrCast(tableName), .setName = @ptrCast(setName), .ip = .{ .value = ip } };
 }
 
-fn serve(resources: Resources) !void {
-    const sockFd = try posix.socket(posix.AF.UNIX, posix.SOCK.DGRAM, 0);
-    defer posix.close(sockFd);
-
-    const sockPath = "/tmp/testSock";
-    const addr = try std.net.Address.initUnix(sockPath);
-    posix.unlinkZ(sockPath) catch {};
-    try posix.bind(sockFd, &addr.any, addr.getOsSockLen());
-    defer posix.unlinkZ(sockPath) catch {};
+fn serve(sockFd: u32, resources: Resources) !void {
     var buff: [64 + 64 + 5]u8 = undefined;
     while (true) {
         const len = try posix.recvfrom(sockFd, &buff, 0, null, null);
         if (len <= 0)
             continue;
-        const message = try parseMessage(buff[0..len]);
-        addIpToSet(.{ .tableName = message.tableName, .family = c.NFPROTO_INET, .name = message.setName }, message.ip.value, resources) catch |err| {
-            // TODO when ack will be implemented, send error ack here before any logging
-            switch (err) {
-                error.Permission => return err,
-                else => std.log.err("while {} : {s}", .{ message, @errorName(err) }),
-            }
+        const message = try parseMessage(buff[0..len]) catch |err| {
+            // TODO ERROR ACK
+            std.log.warn("received malformed message : {s}", .{err});
+            continue;
         };
+        addIpToSet(.{ .tableName = message.tableName, .family = c.NFPROTO_INET, .name = message.setName }, message.ip.value, resources) catch |err| {
+            // TODO ERROR ACK
+            if (err == error.Permission) return err;
+            std.log.warn("while {} : {s}", .{ message, @errorName(err) });
+            continue;
+        };
+        // TODO SUCCESS ACK
     }
 }
 
-//fn initResources() !Resources {}
-
-pub fn main() !u8 {
+fn init() !u8 {
     var buff: [2 * mnl.SOCKET_BUFFER_SIZE]u8 = undefined;
 
     // should be safe if just using current time
@@ -137,14 +142,28 @@ pub fn main() !u8 {
 
     const resources: Resources = .{ .seq = &seq, .buff = &buff, .nl = @ptrCast(nl), .portid = portid, .batch = @ptrCast(batch) };
 
-    serve(resources) catch |err| {
+    const sockFd = try posix.socket(posix.AF.UNIX, posix.SOCK.DGRAM, 0);
+    defer posix.close(sockFd);
+
+    const sockPath = "/tmp/testSock";
+    const addr = try std.net.Address.initUnix(sockPath);
+    posix.unlinkZ(sockPath) catch {};
+    try posix.bind(sockFd, &addr.any, addr.getOsSockLen());
+    defer posix.unlinkZ(sockPath) catch {};
+
+    serve(sockFd, resources) catch |err| {
         switch (err) {
-            error.Permission => {
-                std.log.err("lack permissions !", .{});
-            },
-            else => return err,
+            error.Permission => std.log.err("lack permissions (CAP_NET_ADMIN) !", .{}),
+            else => std.log.err("unhandled error during serve : {s}", .{@errorName(err)}),
         }
         return 1;
     };
     return 0;
+}
+
+pub fn main() !u8 {
+    return try init() catch |err| {
+        std.log.err("init failed : {s}", .{@errorName(err)});
+        return 1;
+    };
 }
