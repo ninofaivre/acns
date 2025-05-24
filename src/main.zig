@@ -96,7 +96,7 @@ fn parseMessage(message: []const u8) error{ FamilyTypeNotFound, FamilyTypeTooSho
     const setName = tail[0..endSetNameIdx];
     if (setName.len == 0) return error.SetNameTooShort;
     if (setName.len >= c.NFT_SET_MAXNAMELEN) return error.SetNameTooLong;
-    tail = tail[(endTableNameIdx + 1)..];
+    tail = tail[(endSetNameIdx + 1)..];
 
     if (tail.len == 0) return error.IpNotFound;
     if (tail.len > 4 and tail[tail.len - 1] == '\x00') tail = tail[0 .. tail.len - 1]; // remove trailing \0
