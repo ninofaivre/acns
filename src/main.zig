@@ -6,12 +6,10 @@ const nftnl = @import("wrappers/libnftnl.zig");
 const mnl = @import("wrappers/libmnl.zig");
 
 const c = @cImport({
-    @cInclude("netinet/in.h");
-
+    // TODO see what's necessary
     @cInclude("linux/netlink.h");
     @cInclude("linux/netfilter.h");
     @cInclude("linux/netfilter/nf_tables.h");
-    @cInclude("stdio.h");
 });
 
 const NftnlError = error{SetElemSet};
@@ -72,56 +70,63 @@ const Message = struct {
     tableName: [*c]const u8,
     setName: [*c]const u8,
     ip: IPv4,
+    familyType: u16,
     pub fn format(self: Message, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
-        try writer.print("inserting {} in inet -> {s} -> {s}", .{ self.ip, self.tableName, self.setName });
+        try writer.print("ip4/6[{}] in family[{s}] -> tableName[{s}] -> setName[{s}]", .{ self.familyType, self.ip, self.tableName, self.setName });
     }
 };
 
-fn parseMessage(message: []const u8) !Message {
+fn parseMessage(message: []const u8) error{ FamilyTypeNotFound, FamilyTypeTooShort, TableNameNotFound, TableNameTooShort, TableNameTooLong, SetNameNotFound, SetNameTooShort, SetNameTooLong, IpNotFound, IpTooShort, IpTooLong }!Message {
     var tail = message;
+
+    if (tail.len < 0) return error.FamilyTypeNotFound;
+    if (tail.len < 2) return error.FamilyTypeTooShort;
+    const familyType: u16 = std.mem.readInt(u16, tail[0..2], std.builtin.Endian.little);
+    tail = tail[2..];
 
     const endTableNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.TableNameNotFound;
     const tableName = tail[0..endTableNameIdx];
     if (tableName.len == 0) return error.TableNameTooShort;
-    if (tableName.len > 63) return error.TableNameTooLong;
+    if (tableName.len >= c.NFT_TABLE_MAXNAMELEN) return error.TableNameTooLong;
     tail = tail[(endTableNameIdx + 1)..];
 
     const endSetNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.SetNameNotFound;
     const setName = tail[0..endSetNameIdx];
     if (setName.len == 0) return error.SetNameTooShort;
-    if (setName.len > 63) return error.SetNameTooLong;
+    if (setName.len >= c.NFT_SET_MAXNAMELEN) return error.SetNameTooLong;
     tail = tail[(endTableNameIdx + 1)..];
 
     if (tail.len == 0) return error.IpNotFound;
-    if (tail[tail.len - 1] == '\x00') tail = tail[0 .. tail.len - 1]; // remove trailing \0
+    if (tail.len > 4 and tail[tail.len - 1] == '\x00') tail = tail[0 .. tail.len - 1]; // remove trailing \0
     // TODO handle ipv6 (can be discriminated by size)
     if (tail.len < 4) return error.IpTooShort;
     if (tail.len > 4) return error.IpTooLong;
-    const ip: u32 = std.mem.readInt(u32, tail, std.builtin.Endian.little);
+    const ip: u32 = std.mem.readInt(u32, tail[0..4], std.builtin.Endian.little);
 
-    return .{ .tableName = @ptrCast(tableName), .setName = @ptrCast(setName), .ip = .{ .value = ip } };
+    return .{ .familyType = familyType, .tableName = @ptrCast(tableName), .setName = @ptrCast(setName), .ip = .{ .value = ip } };
 }
 
-fn serve(sockFd: u32, resources: Resources) !void {
-    var buff: [64 + 64 + 5]u8 = undefined;
+fn serve(sockFd: i32, resources: Resources) !void {
+    var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
     while (true) {
         const len = try posix.recvfrom(sockFd, &buff, 0, null, null);
         if (len <= 0)
             continue;
-        const message = try parseMessage(buff[0..len]) catch |err| {
+        const message = parseMessage(buff[0..len]) catch |err| {
             // TODO ERROR ACK
-            std.log.warn("received malformed message : {s}", .{err});
+            std.log.warn("received malformed message : {s}", .{@errorName(err)});
             continue;
         };
-        addIpToSet(.{ .tableName = message.tableName, .family = c.NFPROTO_INET, .name = message.setName }, message.ip.value, resources) catch |err| {
+        addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources) catch |err| {
             // TODO ERROR ACK
             if (err == error.Permission) return err;
-            std.log.warn("while {} : {s}", .{ message, @errorName(err) });
+            std.log.warn("while inserting {} : {s}", .{ message, @errorName(err) });
             continue;
         };
         // TODO SUCCESS ACK
+        std.log.debug("inserted {}", .{message});
     }
 }
 
@@ -162,7 +167,7 @@ fn init() !u8 {
 }
 
 pub fn main() !u8 {
-    return try init() catch |err| {
+    return init() catch |err| {
         std.log.err("init failed : {s}", .{@errorName(err)});
         return 1;
     };
