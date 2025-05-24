@@ -58,10 +58,10 @@ const IPv4 = struct {
     pub fn format(self: IPv4, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
-        const o1: u8 = @truncate(self.value >> 24);
-        const o2: u8 = @truncate(self.value >> 16);
-        const o3: u8 = @truncate(self.value >> 8);
-        const o4: u8 = @truncate(self.value);
+        const o1: u8 = @truncate(self.value);
+        const o2: u8 = @truncate(self.value >> 8);
+        const o3: u8 = @truncate(self.value >> 16);
+        const o4: u8 = @truncate(self.value >> 24);
         try writer.print("{}.{}.{}.{}", .{ o1, o2, o3, o4 });
     }
 };
@@ -74,7 +74,7 @@ const Message = struct {
     pub fn format(self: Message, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
-        try writer.print("ip4/6[{}] in family[{s}] -> tableName[{s}] -> setName[{s}]", .{ self.familyType, self.ip, self.tableName, self.setName });
+        try writer.print("ip4/6[{}] in family[{s}] -> tableName[{s}] -> setName[{s}]", .{ self.ip, self.familyType, self.tableName, self.setName });
     }
 };
 
