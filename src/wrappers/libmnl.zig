@@ -6,12 +6,21 @@ const c = @cImport({
     @cInclude("errno.h");
 });
 
+// tmp
+
+pub const nlmsgOk = c.mnl_nlmsg_ok;
+pub const nlmsgNext = c.mnl_nlmsg_next;
+
 const MnlSocketError = error{ AccessDenied, AddressFamilyNotSupported, ProtocolFamilyNotAvailable, ProcessFdQuotaExceeded, SystemFdQuotaExceeded, SystemResources, ProtocolNotSupported, SocketTypeNotSupported, OutOfMemory, Unexpected };
 
 pub const SOCKET_AUTOPID = c.MNL_SOCKET_AUTOPID;
 pub const SOCKET_BUFFER_SIZE = if (std.heap.pageSize() < 8192) std.heap.pageSize() else 8192;
+pub const CB_OK = c.MNL_CB_OK;
+pub const CB_KO = c.MNL_CB_KO;
+
 pub const Socket = c.mnl_socket;
 pub const NlmsgBatch = c.mnl_nlmsg_batch;
+pub const Nlmsghdr = c.nlmsghdr;
 
 pub fn socketOpen(bus: i32) MnlSocketError!*c.mnl_socket {
     std.c._errno().* = 0;
@@ -54,6 +63,10 @@ pub fn socketGetPortid(nl: *c.mnl_socket) u32 {
     return c.mnl_socket_get_portid(nl);
 }
 
+pub fn socketGetFd(nl: *c.mnl_socket) i32 {
+    return c.mnl_socket_get_fd(nl);
+}
+
 pub fn nlmsgBatchStart(buff: *[2 * SOCKET_BUFFER_SIZE]u8) !*c.mnl_nlmsg_batch {
     return c.mnl_nlmsg_batch_start(&buff[0], SOCKET_BUFFER_SIZE) orelse error.OutOfMemory;
 }
@@ -84,9 +97,14 @@ pub fn nlmsgBatchSize(batch: *c.mnl_nlmsg_batch) usize {
 
 pub fn cbRun(buff: *anyopaque, numbytes: usize, seq: u32, portid: u32, cbData: c.mnl_cb_t, data: ?*anyopaque) !u32 {
     const ret = c.mnl_cb_run(buff, numbytes, seq, portid, cbData, data);
+    if (posix.errno(ret) != .SUCCESS) std.log.debug("cbRun, errno : {s}", .{@tagName(posix.errno(ret))});
     return switch (posix.errno(ret)) {
         .SUCCESS => @intCast(ret),
         .PERM => error.Permission,
+        .NOENT => error.PathNotFound,
+        .SRCH => error.WrongPortId,
+        .PROTO => error.WrongSeq,
+        .INTR => error.InterruptedDump,
         else => error.TODO_cbRun,
     };
 }

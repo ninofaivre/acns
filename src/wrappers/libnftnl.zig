@@ -9,6 +9,8 @@ pub const SET_ELEM_KEY = c.NFTNL_SET_ELEM_KEY;
 pub const SET_TABLE = c.NFTNL_SET_TABLE;
 pub const SET_NAME = c.NFTNL_SET_NAME;
 
+pub const Set = c.nftnl_set;
+
 pub fn setAlloc() !*c.nftnl_set {
     return c.nftnl_set_alloc() orelse error.OutOfMemory;
 }
