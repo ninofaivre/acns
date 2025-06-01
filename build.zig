@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     var absoluteIncludesPaths = std.mem.splitScalar(u8, b.option([]const u8, "absoluteIncludesPaths", "").?, ',');
 
     const exe = b.addExecutable(.{
-        .name = "acn",
+        .name = "acns",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
