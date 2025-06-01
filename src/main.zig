@@ -42,21 +42,27 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     var err: ?anyerror = null;
     var nMsgAck: usize = 0;
 
-    var pollRet = try posix.poll(&fds, 0);
-    while (pollRet > 0 and (fds[0].revents & posix.POLL.IN) != 0) {
+    var pollRet: usize = 0;
+    while (blk: {
+        // TODO 5 should be a setting
+        pollRet = try posix.poll(&fds, 5);
+        break :blk pollRet > 0;
+    } and (fds[0].revents & posix.POLL.IN) != 0) : (nMsgAck += 1) {
         const retRecv = try mnl.socketRecvfrom(nl, &buff[0], @sizeOf(@TypeOf(buff.*)));
-        const cbR = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| {
+        const cbR = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| blk: {
             if (err) |errr| {
                 if (errr == error.WrongSeq) err = e;
             } else {
                 err = e;
             }
-            null;
+            break :blk null;
         };
-        if (cbR != null and err == error.WrongSeq)
-            err = null;
-        nMsgAck += 1;
-        pollRet = try posix.poll(&fds, 0);
+        if (cbR != null) {
+            if (err) |errr| {
+                if (errr == error.WrongSeq)
+                    err = null;
+            }
+        }
     }
     if (err) |e| return e;
     return nMsgAck;
@@ -177,12 +183,14 @@ fn serve(sockFd: i32, resources: Resources) !void {
             // TODO ERROR ACK
             switch (err) {
                 error.Permission, error.WrongSeq => return err,
+                else => {
+                    std.log.warn("while inserting {s} : {s}", .{ message, @errorName(err) });
+                    continue;
+                },
             }
-            std.log.warn("while inserting {} : {s}", .{ message, @errorName(err) });
-            continue;
         };
         // TODO SUCCESS ACK
-        std.log.debug("inserted {}", .{message});
+        std.log.debug("inserted {s}", .{message});
     }
 }
 
@@ -211,15 +219,16 @@ fn init() !u8 {
     try posix.bind(sockFd, &addr.any, addr.getOsSockLen());
     defer posix.unlinkZ(sockPath) catch {};
 
-    std.log.info("listening on unix dgram sock {}", .{sockPath});
-    return serve(sockFd, resources) catch |err| {
+    std.log.info("listening on unix dgram sock {s}", .{sockPath});
+    serve(sockFd, resources) catch |err| {
         switch (err) {
             error.Permission => std.log.err("lack permission : CAP_NET_ADMIN", .{}),
             error.WrongSeq => std.log.err("wrong sequence number as last error for sendBatch, either there is a bug in the code, either the kernel was late sending ACKs twice in a row", .{}),
             else => std.log.err("unhandled error during serve : {s}", .{@errorName(err)}),
         }
         return 1;
-    } orelse 0;
+    };
+    return 0;
 }
 
 pub fn main() !u8 {

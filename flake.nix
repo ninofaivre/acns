@@ -9,8 +9,11 @@
     let
       pkgs = import nixpkgs { system = "x86_64-linux"; };
     in {
-      packages."x86_64-linux".acn = pkgs.stdenv.mkDerivation {
-        name = "acn";
+      packages."x86_64-linux".acns = pkgs.stdenv.mkDerivation {
+        meta = {
+          mainProgram = "acns";
+        };
+        name = "acns";
         src = ./.;
 
         zigBuildFlags = [
@@ -33,11 +36,11 @@
         ];
       };
 
-      defaultPackage.x86_64-linux = self.packages."x86_64-linux".acn;
+      defaultPackage.x86_64-linux = self.packages."x86_64-linux".acns;
 
       devShell.x86_64-linux = pkgs.mkShell {
         buildInputs = [
-          self.packages."x86_64-linux".acn
+          self.packages."x86_64-linux".acns
         ];
 
         shellHook = ''
