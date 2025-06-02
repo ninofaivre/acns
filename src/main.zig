@@ -108,9 +108,9 @@ fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]cons
             else => err,
         };
     };
-    if (nMsgAck <= expectedNMsgAck) {
+    if (nMsgAck < expectedNMsgAck) {
         return error.ReceivedTooFewAck;
-    } else if (nMsgAck >= expectedNMsgAck) {
+    } else if (nMsgAck > expectedNMsgAck) {
         return error.ReceivedTooManyAck;
     }
 }
