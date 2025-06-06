@@ -172,15 +172,19 @@ fn parseMessage(message: []const u8) error{ FamilyTypeNotFound, FamilyTypeTooSho
 
 fn serve(sockFd: i32, resources: Resources) !void {
     var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
+    var clientAddr: posix.sockaddr = undefined;
+    var clientAddrLen: posix.socklen_t = @sizeOf(@TypeOf(clientAddr));
     while (true) {
-        const len = try posix.recvfrom(sockFd, &buff, 0, null, null);
+        const len = try posix.recvfrom(sockFd, &buff, 0, &clientAddr, &clientAddrLen);
         const message = parseMessage(buff[0..len]) catch |err| {
-            // TODO ERROR ACK
+            buff[0] = 1;
+            _ = try posix.sendto(sockFd, buff[0..1], 0, &clientAddr, clientAddrLen);
             std.log.warn("received malformed message : {s}", .{@errorName(err)});
             continue;
         };
         addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources) catch |err| {
-            // TODO ERROR ACK
+            buff[0] = 1;
+            _ = try posix.sendto(sockFd, buff[0..1], 0, &clientAddr, clientAddrLen);
             switch (err) {
                 error.Permission, error.WrongSeq => return err,
                 else => {
@@ -189,7 +193,8 @@ fn serve(sockFd: i32, resources: Resources) !void {
                 },
             }
         };
-        // TODO SUCCESS ACK
+        buff[0] = 0;
+        _ = try posix.sendto(sockFd, buff[0..1], 0, &clientAddr, clientAddrLen);
         std.log.debug("inserted {s}", .{message});
     }
 }
