@@ -44,11 +44,11 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
 
     var pollRet: usize = 0;
     while (blk: {
-        // TODO 5 should be a setting
-        pollRet = try posix.poll(&fds, 5);
+        pollRet = try posix.poll(&fds, 0);
         break :blk pollRet > 0;
     } and (fds[0].revents & posix.POLL.IN) != 0) : (nMsgAck += 1) {
         const retRecv = try mnl.socketRecvfrom(nl, &buff[0], @sizeOf(@TypeOf(buff.*)));
+        // TODO patch this ugly shit
         const cbR = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| blk: {
             if (err) |errr| {
                 if (errr == error.WrongSeq) err = e;
