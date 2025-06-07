@@ -194,7 +194,12 @@ fn serve(sockFd: i32, resources: Resources) !void {
             }
         };
         buff[0] = 0;
-        _ = try posix.sendto(sockFd, buff[0..1], 0, &clientAddr, clientAddrLen);
+        std.debug.print("clientAddr : {}\n", .{clientAddr});
+        _ = posix.sendto(sockFd, buff[0..1], 0, &clientAddr, clientAddrLen) catch |err| {
+            if (err != error.FileNotFound) {
+                return err;
+            } else std.debug.print("FileNotFound");
+        };
         std.log.debug("inserted {s}", .{message});
     }
 }
