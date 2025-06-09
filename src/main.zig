@@ -8,112 +8,12 @@ const posix = std.posix;
 
 const nftnl = @import("wrappers/libnftnl.zig");
 const mnl = @import("wrappers/libmnl.zig");
+const mynft = @import("./nft.zig");
 
 const c = @cImport({
-    // TODO see what's necessary
     @cInclude("linux/netlink.h");
-    @cInclude("linux/netfilter.h");
     @cInclude("linux/netfilter/nf_tables.h");
-    @cInclude("stdio.h");
 });
-
-const NftnlError = error{SetElemSet};
-const MnlError = error{ SocketSend, SocketRecv, SocketOpen, SocketBind, BatchNextNoSpace };
-
-const Resources = struct { seq: *u32, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, nl: *mnl.Socket, batch: *mnl.NlmsgBatch };
-
-fn addSetElemNlmsgToBatch(batch: *mnl.NlmsgBatch, set: *nftnl.Set, attr: u16, family: u16, flags: u16, seq: u32) !void {
-    const nlh = nftnl.nlmsgBuildHdr(@ptrCast(mnl.nlmsgBatchCurrent(batch)), attr, family, flags, seq);
-    nftnl.setElemsNlmsgBuildPayload(nlh, set);
-    try mnl.nlmsgBatchNext(batch);
-}
-
-fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, seq: u32) !usize {
-    _ = try mnl.socketSendto(nl, mnl.nlmsgBatchHead(batch), mnl.nlmsgBatchSize(batch));
-
-    var fds: [1]posix.pollfd = .{
-        .{
-            .fd = mnl.socketGetFd(nl),
-            .events = posix.POLL.IN,
-            .revents = 0,
-        },
-    };
-
-    var err: ?anyerror = null;
-    var nMsgAck: usize = 0;
-
-    var pollRet: usize = 0;
-    while (blk: {
-        pollRet = try posix.poll(&fds, 0);
-        break :blk pollRet > 0;
-    } and (fds[0].revents & posix.POLL.IN) != 0) : (nMsgAck += 1) {
-        const retRecv = try mnl.socketRecvfrom(nl, &buff[0], @sizeOf(@TypeOf(buff.*)));
-        // TODO patch this ugly shit
-        const cbR = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| blk: {
-            if (err) |errr| {
-                if (errr == error.WrongSeq) err = e;
-            } else {
-                err = e;
-            }
-            break :blk null;
-        };
-        if (cbR != null) {
-            if (err) |errr| {
-                if (errr == error.WrongSeq)
-                    err = null;
-            }
-        }
-    }
-    if (err) |e| return e;
-    return nMsgAck;
-}
-
-fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources) !void {
-    resources.seq.* += 1;
-
-    const seq = resources.seq.*;
-    const buff = resources.buff;
-    const nl = resources.nl;
-    const batch = resources.batch;
-
-    const s = try nftnl.setAlloc();
-    defer nftnl.setFree(s);
-
-    try nftnl.setSetStr(s, nftnl.SET_TABLE, set.tableName);
-    try nftnl.setSetStr(s, nftnl.SET_NAME, set.name);
-
-    const e = try nftnl.setElemAlloc();
-    nftnl.setElemAdd(s, e);
-    try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY, &ip, @sizeOf(@TypeOf(ip)));
-
-    mnl.nlmsgBatchReset(batch);
-
-    _ = nftnl.batchBegin(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
-    try mnl.nlmsgBatchNext(batch);
-
-    var expectedNMsgAck: usize = 1;
-    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
-    // if reset timeout enabled in settings
-    expectedNMsgAck += 2;
-    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_DELSETELEM, set.family, c.NLM_F_ACK, seq);
-    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
-    // if reset timeout enabled in settings
-
-    _ = nftnl.batchEnd(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
-    try mnl.nlmsgBatchNext(batch);
-
-    const nMsgAck = sendBatch(nl, batch, buff, seq) catch |err| {
-        return switch (err) {
-            error.PathNotFound => error.SetPathNotFound,
-            else => err,
-        };
-    };
-    if (nMsgAck < expectedNMsgAck) {
-        return error.ReceivedTooFewAck;
-    } else if (nMsgAck > expectedNMsgAck) {
-        return error.ReceivedTooManyAck;
-    }
-}
 
 const IPv4 = struct {
     value: u32,
@@ -177,7 +77,7 @@ fn sendAck(sockFd: i32, buf: []const u8, destAddr: ?*const posix.sockaddr, addrl
     };
 }
 
-fn serve(sockFd: i32, resources: Resources) !void {
+fn serve(sockFd: i32, resources: mynft.Resources) !void {
     var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
     var clientAddr: posix.sockaddr.storage = undefined;
     var clientAddrLen: posix.socklen_t = @sizeOf(@TypeOf(clientAddr));
@@ -189,7 +89,7 @@ fn serve(sockFd: i32, resources: Resources) !void {
             std.log.warn("received malformed message : {s}", .{@errorName(err)});
             continue;
         };
-        addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources) catch |err| {
+        mynft.addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources) catch |err| {
             buff[0] = 1;
             sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
             switch (err) {
@@ -220,7 +120,7 @@ fn init() !u8 {
     const batch = try mnl.nlmsgBatchStart(&buff);
     defer mnl.nlmsgBatchStop(batch);
 
-    const resources: Resources = .{ .seq = &seq, .buff = &buff, .nl = @ptrCast(nl), .batch = @ptrCast(batch) };
+    const resources: mynft.Resources = .{ .seq = &seq, .buff = &buff, .nl = @ptrCast(nl), .batch = @ptrCast(batch) };
 
     const sockFd = try posix.socket(posix.AF.UNIX, posix.SOCK.DGRAM, 0);
     defer posix.close(sockFd);
