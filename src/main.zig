@@ -9,6 +9,7 @@ const posix = std.posix;
 const nftnl = @import("wrappers/libnftnl.zig");
 const mnl = @import("wrappers/libmnl.zig");
 const mynft = @import("./nft.zig");
+const config = @import("./config.zig");
 
 const c = @cImport({
     @cInclude("linux/netlink.h");
@@ -143,9 +144,33 @@ fn init() !u8 {
     return 0;
 }
 
+const cli = @import("cli/root.zig");
+
 pub fn main() !u8 {
-    return init() catch |err| {
-        std.log.err("init failed : {s}", .{@errorName(err)});
-        return 1;
+    // use std.heap.c_allocator to see memory usage in valgrind
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var root = try cli.build(allocator);
+    defer root.deinit();
+
+    var conf: ?config.Config = null;
+
+    var data = .{
+        .config = &conf,
     };
+    try root.execute(.{
+        .data = &data,
+    });
+
+    if (conf) |co| {
+        _ = co;
+        std.debug.print("ici normalement on lance init avec co\n", .{});
+        //return init() catch |err| {
+        //   std.log.err("init failed : {s}", .{@errorName(err)});
+        //  return 1;
+        //};
+    }
+    return 0;
 }

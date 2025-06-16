@@ -7,7 +7,11 @@
 
   outputs = { self, nixpkgs }:
     let
-      pkgs = import nixpkgs { system = "x86_64-linux"; };
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      inherit (nixpkgs) lib;
+      zigPkgs = import ./nix/deps.nix { inherit (pkgs) fetchFromGitHub; };
+      version = "0.0.1";
     in {
       packages."x86_64-linux".acns = pkgs.stdenv.mkDerivation {
         meta = {
@@ -15,10 +19,12 @@
         };
         name = "acns";
         src = ./.;
+        inherit version;
 
         zigBuildFlags = [
           "-DabsoluteLibsPaths=${pkgs.libnftnl}/lib,${pkgs.libnl.out}/lib,${pkgs.libmnl}/lib"
           "-DabsoluteIncludesPaths=${pkgs.libnftnl}/include,${pkgs.libnl.dev}/include/libnl3,${pkgs.libmnl}/include,${pkgs.linuxHeaders}/include"
+          "-Dversion=${version}"
         ];
 
         nativeBuildInputs = with pkgs; [
@@ -28,7 +34,16 @@
           libnl.bin
           libmnl
           linuxHeaders
-        ];
+        ] ++ builtins.attrValues zigPkgs;
+        postPatch = ''
+          >build.zig.zon cat <<< '${(import ./nix/utils/genZon.nix { inherit lib; }) {
+            name = "acns";
+            fingerprint = "0xda3d5caca4187a84";
+            inherit version;
+            paths = [ "src" "build.zig" ];
+            inherit zigPkgs;
+          }}'
+        '';
         buildInputs = with pkgs; [
           libnftnl
           libnl.bin
@@ -44,7 +59,7 @@
         ];
 
         shellHook = ''
-          echo "coucou"
+          echo "acns added to devshell path"
         '';
       };
     };
