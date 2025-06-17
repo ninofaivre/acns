@@ -36,9 +36,9 @@
         postPatch = ''
           rm -rf deps
           mkdir deps
-          ${lib.strings.concatMapStrings ({name, value}: ''
+          ${lib.strings.concatMapStrings (value: ''
             ln -s ${value} ./deps/${lib.removePrefix "/nix/store/" value}
-          '')  (lib.attrsets.attrsToList zigDeps)}
+          '')  (lib.attrsets.attrValues zigDeps)}
           >build.zig.zon cat <<< '${(import ./nix/utils/genZon.nix { inherit lib; }) {
             name = "acns";
             fingerprint = "0xda3d5caca4187a84";
@@ -57,6 +57,8 @@
         ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != zig.hook) acns.nativeBuildInputs;
         shellHook = ''
           export PATH="''${PATH}:''${PWD}/zig-out/bin"
+          alias build="zig build"
+          alias b="build"
           ${acns.postPatch}
         '';
       };
