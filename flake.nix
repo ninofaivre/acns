@@ -10,10 +10,10 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       inherit (nixpkgs) lib;
-      zigPkgs = import ./nix/deps.nix { inherit (pkgs) fetchFromGitHub; };
+      zigDeps = import ./nix/deps.nix { inherit (pkgs) fetchFromGitHub; };
       version = "0.0.1";
     in {
-      packages."x86_64-linux".acns = pkgs.stdenv.mkDerivation {
+      packages.${system}.acns = pkgs.stdenv.mkDerivation {
         meta = {
           mainProgram = "acns";
         };
@@ -21,45 +21,43 @@
         src = ./.;
         inherit version;
 
-        zigBuildFlags = [
-          "-DabsoluteLibsPaths=${pkgs.libnftnl}/lib,${pkgs.libnl.out}/lib,${pkgs.libmnl}/lib"
-          "-DabsoluteIncludesPaths=${pkgs.libnftnl}/include,${pkgs.libnl.dev}/include/libnl3,${pkgs.libmnl}/include,${pkgs.linuxHeaders}/include"
-          "-Dversion=${version}"
-        ];
+        zigBuildFlags = [];
 
         nativeBuildInputs = with pkgs; [
           zig.hook
-          libnftnl
           libnl.dev
-          libnl.bin
-          libmnl
           linuxHeaders
-        ] ++ builtins.attrValues zigPkgs;
-        postPatch = ''
-          >build.zig.zon cat <<< '${(import ./nix/utils/genZon.nix { inherit lib; }) {
-            name = "acns";
-            fingerprint = "0xda3d5caca4187a84";
-            inherit version;
-            paths = [ "src" "build.zig" ];
-            inherit zigPkgs;
-          }}'
-        '';
+        ] ++ builtins.attrValues zigDeps;
         buildInputs = with pkgs; [
           libnftnl
           libnl.bin
           libmnl
         ];
+        postPatch = ''
+          rm -rf deps
+          mkdir deps
+          ${lib.strings.concatMapStrings ({name, value}: ''
+            ln -s ${value} ./deps/${lib.removePrefix "/nix/store/" value}
+          '')  (lib.attrsets.attrsToList zigDeps)}
+          >build.zig.zon cat <<< '${(import ./nix/utils/genZon.nix { inherit lib; }) {
+            name = "acns";
+            fingerprint = "0xda3d5caca4187a84";
+            inherit version;
+            paths = [ "src" "build.zig" ];
+            deps = zigDeps;
+          }}'
+        '';
       };
 
-      defaultPackage.x86_64-linux = self.packages."x86_64-linux".acns;
+      defaultPackage.${system} = self.packages.${system}.acns;
 
-      devShell.x86_64-linux = pkgs.mkShell {
-        buildInputs = [
-          self.packages."x86_64-linux".acns
-        ];
-
+      devShell.${system} = with self.packages.${system}; pkgs.mkShell {
+        nativeBuildInputs = with pkgs; [
+          zig
+        ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != zig.hook) acns.nativeBuildInputs;
         shellHook = ''
-          echo "acns added to devshell path"
+          export PATH="''${PATH}:''${PWD}/zig-out/bin"
+          ${acns.postPatch}
         '';
       };
     };

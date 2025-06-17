@@ -1,23 +1,29 @@
 const std = @import("std");
 
-pub fn missingOption(optionName: []const u8) void {
+const buildZon: struct {
+    name: @Type(.enum_literal),
+    version: []const u8,
+    fingerprint: u64,
+    dependencies: struct {
+        yaml: struct { path: []const u8 },
+        zli: struct { path: []const u8 },
+    },
+    paths: []const []const u8,
+} = @import("build.zig.zon");
+
+fn missingOption(optionName: []const u8) void {
     std.debug.panic("Build option '{s}' is missing, build cannot proceed, this option is mandatory.", .{optionName});
+}
+
+fn getEnvVar(allocator: std.mem.Allocator, name: []const u8) ?[]u8 {
+    return std.process.getEnvVarOwned(allocator, name) catch {
+        return null;
+    };
 }
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-
-    const absoluteLibsPathsOpt = b.option([]const u8, "absoluteLibsPaths", "List of comma separated paths to add to libs search path.") orelse "";
-    var absoluteLibsPaths = std.mem.splitScalar(u8, absoluteLibsPathsOpt, ',');
-
-    const absoluteIncludesPathsOpt = b.option([]const u8, "absoluteIncludesPaths", "List of comma separated paths to add to libs headers search path.") orelse "";
-    var absoluteIncludesPaths = std.mem.splitScalar(u8, absoluteIncludesPathsOpt, ',');
-
-    const version = std.SemanticVersion.parse(b.option(([]const u8), "version", "Version of the program (mandatory).") orelse {
-        missingOption("version");
-        return;
-    });
 
     const exe = b.addExecutable(.{
         .name = "acns",
@@ -26,32 +32,66 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // ---Libs Paths--- //
+    //
+    if (getEnvVar(b.allocator, "NIX_LDFLAGS")) |nixLdFlagsEnv| {
+        var nixLdFlagsIt = std.mem.splitScalar(u8, nixLdFlagsEnv, ' ');
+
+        while (nixLdFlagsIt.next()) |word| {
+            if (word.len < 3 or !std.mem.eql(u8, word[0..2], "-L")) continue;
+            exe.addLibraryPath(.{ .cwd_relative = word[2..] });
+        }
+    }
+    //
+    // ---Libs Paths--- //
+
+    // ---Includes Paths--- //
+    //
+    if (getEnvVar(b.allocator, "NIX_CFLAGS_COMPILE")) |nixCFlagsCompileEnv| {
+        var nixCFlagsCompileIt = std.mem.splitScalar(u8, nixCFlagsCompileEnv, ' ');
+
+        while (nixCFlagsCompileIt.next()) |word| {
+            if (!std.mem.eql(u8, word, "-isystem")) continue;
+            if (nixCFlagsCompileIt.next()) |path| {
+                exe.addIncludePath(.{ .cwd_relative = path });
+            }
+        }
+    }
+    //
+    // ---Includes Paths--- //
+
+    // ---Options--- //
+    //
     const options = b.addOptions();
 
-    if (version) |semanticVersion| {
-        options.addOption(std.SemanticVersion, "version", semanticVersion);
+    if (std.SemanticVersion.parse(buildZon.version)) |version| {
+        options.addOption(std.SemanticVersion, "version", version);
     } else |err| {
         std.debug.panic("Version need to be semantic ([major].[minor].[patch]) : {s}", .{@errorName(err)});
     }
-    exe.root_module.addImport("buildOptions", options.createModule());
 
+    exe.root_module.addImport("buildOptions", options.createModule());
+    //
+    // ---Options--- //
+
+    // ---Zig Deps--- //
+    //
     const zliDep = b.dependency("zli", .{ .target = target });
     exe.root_module.addImport("zli", zliDep.module("zli"));
 
     const yamlDep = b.dependency("yaml", .{ .target = target, .optimize = optimize });
     exe.root_module.addImport("yaml", yamlDep.module("yaml"));
+    //
+    // ---Zig Deps--- //
 
-    while (absoluteLibsPaths.next()) |path| {
-        exe.addLibraryPath(.{ .cwd_relative = path });
-    }
-    while (absoluteIncludesPaths.next()) |path| {
-        exe.addIncludePath(.{ .cwd_relative = path });
-    }
-
+    // ---Link Libs--- //
+    //
+    exe.linkLibC();
     exe.linkSystemLibrary("nftnl");
     exe.linkSystemLibrary("nl-3");
     exe.linkSystemLibrary("mnl");
-    exe.linkLibC();
+    //
+    // ---Link Libs--- //
 
     b.installArtifact(exe);
 }

@@ -1,5 +1,5 @@
 { lib }:
-{ name, fingerprint, version, paths, zigPkgs }: ''.{
+{ name, fingerprint, version, paths, deps }: ''.{
   .name = .${name},
   .fingerprint = ${fingerprint},
   .version = "${version}",
@@ -7,8 +7,8 @@
   .dependencies = .{
     ${lib.strings.concatMapStrings ({name, value}: ''
       .${name} = .{
-        .path = "../../${value}/",
+        .path = "./deps/${lib.removePrefix "/nix/store/" value}/",
       },
-    '') (lib.attrsets.attrsToList zigPkgs)}
+    '') (lib.attrsets.attrsToList deps)}
   },
 }''
