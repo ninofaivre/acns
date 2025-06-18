@@ -1,6 +1,38 @@
 {
   "nodes": {
+    "nix2zon": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1750258947,
+        "narHash": "sha256-G0U9v9ErfGbdFBSBxRrYAwjt+EssnH26RBHJdhFyqZ8=",
+        "owner": "ninofaivre",
+        "repo": "nix2zon",
+        "rev": "61a7aeb5d05ddb1e7e67004b1151468e9b288674",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ninofaivre",
+        "repo": "nix2zon",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
+      "locked": {
+        "lastModified": 1750122687,
+        "narHash": "sha256-zcGClfkXh4pckf4aGOZ18GFv73n1xHbdMWl17cPLouE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "c539ae8d21e49776966d714f82fba33b1fca78bc",
+        "type": "github"
+      },
+      "original": {
+        "id": "nixpkgs",
+        "type": "indirect"
+      }
+    },
+    "nixpkgs_2": {
       "locked": {
         "lastModified": 1747428706,
         "narHash": "sha256-XVds9FkRrY59xRNNq14FNsFGqDiexXX/mlHcX4hPyyk=",
@@ -17,7 +49,8 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nix2zon": "nix2zon",
+        "nixpkgs": "nixpkgs_2"
       }
     }
   },
