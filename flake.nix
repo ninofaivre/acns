@@ -2,7 +2,7 @@
   description = "A Nix flake for building the Zig program 'acn'";
 
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-25.05";
+    nixpkgs.url = "nixpkgs/release-25.05";
     nix2zon.url = "github:ninofaivre/nix2zon";
   };
 
