@@ -5,7 +5,6 @@ const buildZon: struct {
     version: []const u8,
     fingerprint: u64,
     dependencies: struct {
-        yaml: struct { path: []const u8 },
         zli: struct { path: []const u8 },
     },
     paths: []const []const u8,
@@ -78,9 +77,6 @@ pub fn build(b: *std.Build) void {
     //
     const zliDep = b.dependency("zli", .{ .target = target });
     exe.root_module.addImport("zli", zliDep.module("zli"));
-
-    const yamlDep = b.dependency("yaml", .{ .target = target, .optimize = optimize });
-    exe.root_module.addImport("yaml", yamlDep.module("yaml"));
     //
     // ---Zig Deps--- //
 

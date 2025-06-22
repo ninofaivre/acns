@@ -1,8 +1,3 @@
-pub const std_options = std.Options{
-    // TODO setting option for log_level
-    .log_level = .debug,
-};
-
 const std = @import("std");
 const posix = std.posix;
 
@@ -107,7 +102,7 @@ fn serve(sockFd: i32, resources: mynft.Resources) !void {
     }
 }
 
-fn init() !u8 {
+fn init(conf: config.Config) !u8 {
     var buff: [2 * mnl.SOCKET_BUFFER_SIZE]u8 = undefined;
 
     // should be safe if just using current time
@@ -126,13 +121,12 @@ fn init() !u8 {
     const sockFd = try posix.socket(posix.AF.UNIX, posix.SOCK.DGRAM, 0);
     defer posix.close(sockFd);
 
-    const sockPath = "/tmp/testSock";
-    const addr = try std.net.Address.initUnix(sockPath);
-    posix.unlinkZ(sockPath) catch {};
+    const addr = try std.net.Address.initUnix(conf.socketPath);
+    posix.unlink(conf.socketPath) catch {};
     try posix.bind(sockFd, &addr.any, addr.getOsSockLen());
-    defer posix.unlinkZ(sockPath) catch {};
+    defer posix.unlink(conf.socketPath) catch {};
 
-    std.log.info("listening on unix dgram sock {s}", .{sockPath});
+    std.log.info("listening on unix dgram sock {s}", .{conf.socketPath});
     serve(sockFd, resources) catch |err| {
         switch (err) {
             error.Permission => std.log.err("lack permission : CAP_NET_ADMIN", .{}),
@@ -155,22 +149,18 @@ pub fn main() !u8 {
     var root = try cli.build(allocator);
     defer root.deinit();
 
-    var conf: ?config.Config = null;
-
-    var data = .{
-        .config = &conf,
+    var data: cli.Data = .{
+        .config = null,
     };
     try root.execute(.{
         .data = &data,
     });
 
-    if (conf) |co| {
-        _ = co;
-        std.debug.print("ici normalement on lance init avec co\n", .{});
-        //return init() catch |err| {
-        //   std.log.err("init failed : {s}", .{@errorName(err)});
-        //  return 1;
-        //};
+    if (data.config) |conf| {
+        return init(conf) catch |err| {
+            std.log.err("init failed : {s}", .{@errorName(err)});
+            return 1;
+        };
     }
     return 0;
 }
