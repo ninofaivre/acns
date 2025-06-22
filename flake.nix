@@ -58,6 +58,42 @@
       devShell.${system} = with self.packages.${system}; pkgs.mkShell {
         nativeBuildInputs = with pkgs; [
           zig
+          (pkgs.writeShellApplication rec {
+            name = "acnsSimpleClient";
+            runtimeInputs = with pkgs; [ socat ];
+            text = ''
+              function helpAcnsSocketPath {
+                echo "acnsSocketPath : the path to the acns socket, must be writable"
+              }
+              function helpNftFamily {
+                echo 'nftFamily : one of [ "ip" "ip6" "inet" "arp" "bridge" "netdev" ]'
+              }
+              function help {
+                echo "Usage : ${name} [acnsSocketPath] [nftFamily] [nftTableName] [nftSetName] [ipv4]"
+                helpAcnsSocketPath
+                helpNftFamily
+              }
+              if [ ''${#@} == 0 ]; then
+                help; exit 0;
+              fi
+              if [ ''${#@} != 5 ]; then
+                echo "Invalid number of arguments !" >&2
+                help >&2; exit 1;
+              fi
+              export ACNS_SOCKET_PATH="$1"
+              NFT_FAMILY="$2"
+              export NFT_TABLE_NAME="$3"
+              export NFT_SET_NAME="$4"
+              export IP="$5"
+
+              case "$NFT_FAMILY" in
+                "ip" | "ip6" | "inet" | "arp" | "bridge" | "netdev");;
+                *)
+                  echo "Invalid Nft family" >&2
+                  helpNftFamily >&2; exit 1;;
+              esac
+            '';
+          })
         ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != zig.hook) acns.nativeBuildInputs;
         shellHook = ''
           export PATH="''${PATH}:''${PWD}/zig-out/bin"
