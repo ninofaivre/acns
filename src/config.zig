@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const Config = struct {
     socketPath: []const u8,
+    resetTimeout: bool = true,
 };
 
 pub fn load(configPath: []const u8, allocator: std.mem.Allocator) !Config {

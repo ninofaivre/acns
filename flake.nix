@@ -11,17 +11,20 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       inherit (nixpkgs) lib;
-      zigDeps = import ./nix/deps.nix { inherit (pkgs) fetchFromGitHub; };
-      version = "0.0.1";
+
       inherit (nix2zon.lib) toZon;
+
+      name = "acns";
+      version = "0.0.1";
+      zigDeps = import ./nix/deps.nix { inherit (pkgs) fetchFromGitHub; };
     in {
-      packages.${system}.acns = pkgs.stdenv.mkDerivation {
+      packages.${system}.${name} = pkgs.stdenv.mkDerivation {
         meta = {
-          mainProgram = "acns";
+          mainProgram = name;
         };
-        name = "acns";
-        src = ./.;
+        inherit name;
         inherit version;
+        src = ./.;
 
         zigBuildFlags = [];
 
@@ -42,7 +45,7 @@
             ln -s ${value} ./deps/${lib.removePrefix "/nix/store/" value}
           '')  (lib.attrsets.attrValues zigDeps)}
           >build.zig.zon cat <<< '${toZon { value = {
-            name = ".acns";
+            name = ".${name}";
             fingerprint = "0xda3d5caca4187a84";
             inherit version;
             paths = [ "src" "build.zig" ];
@@ -53,46 +56,14 @@
         '';
       };
 
-      defaultPackage.${system} = self.packages.${system}.acns;
+      defaultPackage.${system} = self.packages.${system}.${name};
 
       devShell.${system} = with self.packages.${system}; pkgs.mkShell {
         nativeBuildInputs = with pkgs; [
           zig
-          (pkgs.writeShellApplication rec {
-            name = "acnsSimpleClient";
-            runtimeInputs = with pkgs; [ socat ];
-            text = ''
-              function helpAcnsSocketPath {
-                echo "acnsSocketPath : the path to the acns socket, must be writable"
-              }
-              function helpNftFamily {
-                echo 'nftFamily : one of [ "ip" "ip6" "inet" "arp" "bridge" "netdev" ]'
-              }
-              function help {
-                echo "Usage : ${name} [acnsSocketPath] [nftFamily] [nftTableName] [nftSetName] [ipv4]"
-                helpAcnsSocketPath
-                helpNftFamily
-              }
-              if [ ''${#@} == 0 ]; then
-                help; exit 0;
-              fi
-              if [ ''${#@} != 5 ]; then
-                echo "Invalid number of arguments !" >&2
-                help >&2; exit 1;
-              fi
-              export ACNS_SOCKET_PATH="$1"
-              NFT_FAMILY="$2"
-              export NFT_TABLE_NAME="$3"
-              export NFT_SET_NAME="$4"
-              export IP="$5"
-
-              case "$NFT_FAMILY" in
-                "ip" | "ip6" | "inet" | "arp" | "bridge" | "netdev");;
-                *)
-                  echo "Invalid Nft family" >&2
-                  helpNftFamily >&2; exit 1;;
-              esac
-            '';
+          (import ./nix/simpleClient.sh.nix {
+            inherit pkgs;
+            projectName = name;
           })
         ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != zig.hook) acns.nativeBuildInputs;
         shellHook = ''

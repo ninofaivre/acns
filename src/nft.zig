@@ -3,6 +3,7 @@ const posix = std.posix;
 
 const nftnl = @import("wrappers/libnftnl.zig");
 const mnl = @import("wrappers/libmnl.zig");
+const config = @import("config.zig");
 
 pub const Resources = struct { seq: *u32, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, nl: *mnl.Socket, batch: *mnl.NlmsgBatch };
 
@@ -57,7 +58,7 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     return nMsgAck;
 }
 
-pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources) !void {
+pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources, conf: config.Config) !void {
     resources.seq.* += 1;
 
     const seq = resources.seq.*;
@@ -82,11 +83,11 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
 
     var expectedNMsgAck: usize = 1;
     try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
-    // if reset timeout enabled in settings
-    expectedNMsgAck += 2;
-    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_DELSETELEM, set.family, c.NLM_F_ACK, seq);
-    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
-    // if reset timeout enabled in settings
+    if (conf.resetTimeout)  {
+        expectedNMsgAck += 2;
+        try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_DELSETELEM, set.family, c.NLM_F_ACK, seq);
+        try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
+    }
 
     _ = nftnl.batchEnd(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
     try mnl.nlmsgBatchNext(batch);

@@ -73,7 +73,7 @@ fn sendAck(sockFd: i32, buf: []const u8, destAddr: ?*const posix.sockaddr, addrl
     };
 }
 
-fn serve(sockFd: i32, resources: mynft.Resources) !void {
+fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
     var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
     var clientAddr: posix.sockaddr.storage = undefined;
     var clientAddrLen: posix.socklen_t = @sizeOf(@TypeOf(clientAddr));
@@ -85,7 +85,7 @@ fn serve(sockFd: i32, resources: mynft.Resources) !void {
             std.log.warn("received malformed message : {s}", .{@errorName(err)});
             continue;
         };
-        mynft.addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources) catch |err| {
+        mynft.addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources, conf) catch |err| {
             buff[0] = 1;
             sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
             switch (err) {
@@ -127,7 +127,7 @@ fn init(conf: config.Config) !u8 {
     defer posix.unlink(conf.socketPath) catch {};
 
     std.log.info("listening on unix dgram sock {s}", .{conf.socketPath});
-    serve(sockFd, resources) catch |err| {
+    serve(sockFd, resources, conf) catch |err| {
         switch (err) {
             error.Permission => std.log.err("lack permission : CAP_NET_ADMIN", .{}),
             error.WrongSeq => std.log.err("wrong sequence number as last error for sendBatch, either there is a bug in the code, either the kernel was late sending ACKs twice in a row", .{}),
