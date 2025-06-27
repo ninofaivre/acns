@@ -73,6 +73,33 @@ fn sendAck(sockFd: i32, buf: []const u8, destAddr: ?*const posix.sockaddr, addrl
     };
 }
 
+fn isNftablesPathAuthorized(message: Message, conf: config.Config) bool {
+    if (conf.accessControl == .Disabled)
+        return true;
+    const accessControl = conf.accessControl.Enabled;
+    const tables = blk: {
+        switch (message.familyType) {
+            1 => break :blk accessControl.inet,
+            2 => break :blk accessControl.ip,
+            3 => break :blk accessControl.arp,
+            5 => break :blk accessControl.netdev,
+            7 => break :blk accessControl.bridge,
+            10 => break :blk accessControl.ip6,
+            else => {
+                std.log.warn("{} : family type unknown (not one of [1,2,3,5,7,10] : {}\n", .{message, message.familyType});
+                return false;
+            },
+        }
+    };
+    if (tables) |ts| {
+        const table = ts.get(std.mem.span(message.tableName));
+        if (table) |t| {
+            return t.contains(std.mem.span(message.setName));
+        }
+    }
+    return false;
+}
+
 fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
     var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
     var clientAddr: posix.sockaddr.storage = undefined;
@@ -85,6 +112,12 @@ fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
             std.log.warn("received malformed message : {s}", .{@errorName(err)});
             continue;
         };
+        if (!isNftablesPathAuthorized(message, conf)) {
+            buff[0] = 1;
+            sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
+            std.log.warn("{s} : nft path not authorized", .{ message });
+            continue;
+        }
         mynft.addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources, conf) catch |err| {
             buff[0] = 1;
             sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
@@ -152,9 +185,14 @@ pub fn main() !u8 {
     var data: cli.Data = .{
         .config = null,
     };
-    try root.execute(.{
+    root.execute(.{
         .data = &data,
-    });
+    }) catch |err| {
+        switch (err) {
+            error.ParseZon, error.Parse => return 1,
+            else => return err,
+        }
+    };
 
     if (data.config) |conf| {
         return init(conf) catch |err| {

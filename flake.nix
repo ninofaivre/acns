@@ -3,13 +3,22 @@
 
   inputs = {
     nixpkgs.url = "nixpkgs/release-25.05";
+    zigpkgs.url = "github:mitchellh/zig-overlay";
     nix2zon.url = "github:ninofaivre/nix2zon";
   };
 
-  outputs = { self, nixpkgs, nix2zon }:
+  outputs = { self, zigpkgs, nixpkgs, nix2zon }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      overlays = [
+        (final: prev: {
+          zig = zigpkgs.packages.${prev.system}.master.overrideAttrs (f: p: {
+            meta = prev.zig.meta // zigpkgs.packages.${final.system}.master.meta;
+          });
+        })
+      ];
+      basePkgs = import nixpkgs { inherit system; };
+      pkgs = import nixpkgs { inherit system overlays; };
       inherit (nixpkgs) lib;
 
       inherit (nix2zon.lib) toZon;
@@ -29,7 +38,7 @@
         zigBuildFlags = [];
 
         nativeBuildInputs = with pkgs; [
-          zig.hook
+          basePkgs.zig.hook
           libnl.dev
           linuxHeaders
         ] ++ builtins.attrValues zigDeps;
@@ -65,7 +74,7 @@
             inherit pkgs;
             projectName = name;
           })
-        ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != zig.hook) acns.nativeBuildInputs;
+        ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != basePkgs.zig.hook) acns.nativeBuildInputs;
         shellHook = ''
           export PATH="''${PATH}:''${PWD}/zig-out/bin"
           alias build="zig build"

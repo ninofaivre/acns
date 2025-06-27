@@ -1,0 +1,8 @@
+.{
+    .socketPath = "./mySock",
+    .accessControl = .{
+        .inet = .{
+            .filter = .{ "mySet" },
+        },
+    },
+}

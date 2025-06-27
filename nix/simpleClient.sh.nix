@@ -11,7 +11,7 @@ pkgs.writeShellApplication rec {
       echo "${name}SocketPath : the path to the acns socket, must be writable"
     }
     function helpNftFamily {
-      echo 'nftFamily : one of [ "ip" "ip6" "inet" "arp" "bridge" "netdev" ]'
+      echo 'nftFamily : one of [ "ip" "ip6" "inet" "arp" "bridge" "netdev" "wrong" ]'
     }
     function help {
       echo "Usage : ${name} [${name}SocketPath] [nftFamily] [nftTableName] [nftSetName] [ipv4]"
@@ -40,6 +40,7 @@ pkgs.writeShellApplication rec {
       "bridge") parsedNftFamily=7;;
       "ip6") parsedNftFamily=10;;
       "netdev") parsedNftFamily=14;;
+      "wrong") parsedNftFamily=42;;
       *)
         echo "Invalid Nft family" >&2
         helpNftFamily >&2; exit 1;;
