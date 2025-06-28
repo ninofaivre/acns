@@ -37,6 +37,16 @@ const ZonConfig = struct {
     },
 };
 
+
+pub var state: union(enum) {
+    Loaded: struct {
+        configPath: []const u8,
+        allocator: std.mem.Allocator
+    },
+    NotLoaded: void,
+} = .{ .NotLoaded = {} };
+pub var conf: Config = undefined;
+
 fn parseTables(familyName: []const u8, familyNodeIndex: ?std.zig.Zoir.Node.Index,ast: std.zig.Ast, zoir: std.zig.Zoir, configPath: []const u8, allocator: std.mem.Allocator) !?Config.Tables {
     const familyNode = if (familyNodeIndex) |index| 
             index.get(zoir)
@@ -67,7 +77,7 @@ fn parseTables(familyName: []const u8, familyNodeIndex: ?std.zig.Zoir.Node.Index
     return tables;
 }
 
-pub fn load(configPath: []const u8, allocator: std.mem.Allocator) !Config {
+fn _load(configPath: []const u8, allocator: std.mem.Allocator) !void {
     const configFile = try std.fs.cwd().openFile(configPath, .{});
     defer configFile.close();
 
@@ -87,7 +97,7 @@ pub fn load(configPath: []const u8, allocator: std.mem.Allocator) !Config {
         return err;
     };
 
-    return .{
+    conf = .{
         .socketPath = zonConfig.socketPath,
         .resetTimeout = zonConfig.resetTimeout,
         .timeoutKernelAcksInMs = zonConfig.timeoutKernelAcksInMs,
@@ -108,4 +118,20 @@ pub fn load(configPath: []const u8, allocator: std.mem.Allocator) !Config {
             },
         } else .{ .Disabled = {}, }
     };
+}
+
+pub fn reload() !void {
+    if (state == .NotLoaded) return error.ConfigReloadedBeforeLoad;
+    try _load(state.Loaded.configPath, state.Loaded.allocator);
+}
+
+pub fn load(configPath: []const u8, allocator: std.mem.Allocator) !void {
+    if (state == .Loaded) return error.ConfigAlreadyLoaded;
+    state = .{
+        .Loaded = .{
+            .configPath = configPath,
+            .allocator = allocator,
+        },
+    };
+    try _load(configPath, allocator);
 }

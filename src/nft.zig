@@ -18,7 +18,7 @@ fn addSetElemNlmsgToBatch(batch: *mnl.NlmsgBatch, set: *nftnl.Set, attr: u16, fa
     try mnl.nlmsgBatchNext(batch);
 }
 
-fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, seq: u32, expectedNMsgAck: u8, conf: config.Config) !void {
+fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, seq: u32, expectedNMsgAck: u8) !void {
     _ = try mnl.socketSendto(nl, mnl.nlmsgBatchHead(batch), mnl.nlmsgBatchSize(batch));
 
     var fds: [1]posix.pollfd = .{
@@ -35,7 +35,7 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     // for posix.POLL.IN event and only for one fd but I think it is best
     // practice to check anyway, it could avoir future footgun.
     while (nAck != expectedNMsgAck and
-        (try posix.poll(&fds, conf.timeoutKernelAcksInMs) > 0) and
+        (try posix.poll(&fds, config.conf.timeoutKernelAcksInMs) > 0) and
         (fds[0].revents & posix.POLL.IN) != 0
     ) {
         const retRecv = try mnl.socketRecvfrom(nl, &buff[0], @sizeOf(@TypeOf(buff.*)));
@@ -52,7 +52,7 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     if (nAck != expectedNMsgAck) return error.TooFewAck;
 }
 
-pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources, conf: config.Config) !void {
+pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources) !void {
     resources.seq.* += 1;
 
     const seq = resources.seq.*;
@@ -77,7 +77,7 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
 
     var expectedNMsgAck: u8 = 1;
     try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
-    if (conf.resetTimeout)  {
+    if (config.conf.resetTimeout)  {
         expectedNMsgAck += 2;
         try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_DELSETELEM, set.family, c.NLM_F_ACK, seq);
         try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
@@ -86,7 +86,7 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
     _ = nftnl.batchEnd(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
     try mnl.nlmsgBatchNext(batch);
 
-    sendBatch(nl, batch, buff, seq, expectedNMsgAck, conf) catch |err| {
+    sendBatch(nl, batch, buff, seq, expectedNMsgAck) catch |err| {
         return switch (err) {
             error.PathNotFound => error.SetPathNotFound,
             else => err,

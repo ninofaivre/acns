@@ -5,7 +5,7 @@ const config = @import("../config.zig");
 const buildOptions = @import("buildOptions");
 
 pub const Data = struct {
-    config: ?config.Config
+    needToServe: bool = false,
 };
 
 pub fn build(allocator: std.mem.Allocator) !*zli.Command {
@@ -55,7 +55,8 @@ fn base(ctx: zli.CommandContext) !void {
     if (fVersion)
         try ctx.command.stdout.print("{?}\n", .{ctx.root.options.version});
     if (fConfig.len > 0) {
-        data.*.config = try config.load(fConfig, ctx.allocator);
+        data.*.needToServe = true;
+        try config.load(fConfig, ctx.allocator);
     }
     if (fValidate) {
         if (fConfig.len == 0) {
@@ -63,7 +64,7 @@ fn base(ctx: zli.CommandContext) !void {
             return error.InvalidCommand;
         }
         try ctx.command.stdout.print("Config passed !\n", .{});
-        data.*.config = null;
+        data.*.needToServe = false;
     }
     if (nFlags == 0)
         try ctx.command.printHelp();

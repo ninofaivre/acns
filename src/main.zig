@@ -73,10 +73,10 @@ fn sendAck(sockFd: i32, buf: []const u8, destAddr: ?*const posix.sockaddr, addrl
     };
 }
 
-fn isNftablesPathAuthorized(message: Message, conf: config.Config) bool {
-    if (conf.accessControl == .Disabled)
+fn isNftablesPathAuthorized(message: Message) bool {
+    if (config.conf.accessControl == .Disabled)
         return true;
-    const accessControl = conf.accessControl.Enabled;
+    const accessControl = config.conf.accessControl.Enabled;
     const tables = blk: {
         switch (message.familyType) {
             1 => break :blk accessControl.inet,
@@ -100,7 +100,26 @@ fn isNftablesPathAuthorized(message: Message, conf: config.Config) bool {
     return false;
 }
 
-fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
+var testob: bool = false;
+
+fn sigHupHandler(sigNum: c_int) callconv(.C) void {
+    _ = sigNum;
+    config.reload() catch |err| {
+        switch (err) {
+            error.ConfigReloadedBeforeLoad => std.log.warn("tryed to reload config before it even loaded once", .{}),
+            else =>
+                std.log.warn("failed to reload config at path : {s}\nKeeping old config.", .{
+                    config.state.Loaded.configPath
+                }),
+        }
+        return;
+    };
+    std.log.info("Config at path {s} has been successfully reloaded !", .{
+        config.state.Loaded.configPath
+    });
+}
+
+fn serve(sockFd: i32, resources: mynft.Resources) !void {
     var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
     var clientAddr: posix.sockaddr.storage = undefined;
     var clientAddrLen: posix.socklen_t = @sizeOf(@TypeOf(clientAddr));
@@ -112,7 +131,7 @@ fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
             std.log.warn("received malformed message : {s}", .{@errorName(err)});
             continue;
         };
-        if (!isNftablesPathAuthorized(message, conf)) {
+        if (!isNftablesPathAuthorized(message)) {
             buff[0] = 1;
             sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
             std.log.warn("{s} : nft path not authorized", .{ message });
@@ -122,7 +141,7 @@ fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
                 .tableName = message.tableName,
                 .family = message.familyType,
                 .name = message.setName
-            }, message.ip.value, resources, conf
+            }, message.ip.value, resources
         ) catch |e| {
             buff[0] = 1;
             sendAck(sockFd, buff[0..1],
@@ -146,7 +165,7 @@ fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
     }
 }
 
-fn init(conf: config.Config) !u8 {
+fn init() !u8 {
     var buff: [2 * mnl.SOCKET_BUFFER_SIZE]u8 = undefined;
 
     // should be safe if just using current time
@@ -165,13 +184,13 @@ fn init(conf: config.Config) !u8 {
     const sockFd = try posix.socket(posix.AF.UNIX, posix.SOCK.DGRAM, 0);
     defer posix.close(sockFd);
 
-    const addr = try std.net.Address.initUnix(conf.socketPath);
-    posix.unlink(conf.socketPath) catch {};
+    const addr = try std.net.Address.initUnix(config.conf.socketPath);
+    posix.unlink(config.conf.socketPath) catch {};
     try posix.bind(sockFd, &addr.any, addr.getOsSockLen());
-    defer posix.unlink(conf.socketPath) catch {};
+    defer posix.unlink(config.conf.socketPath) catch {};
 
-    std.log.info("listening on unix dgram sock {s}", .{conf.socketPath});
-    serve(sockFd, resources, conf) catch |err| {
+    std.log.info("listening on unix dgram sock {s}", .{config.conf.socketPath});
+    serve(sockFd, resources) catch |err| {
         switch (err) {
             error.Permission => std.log.err("lack permission : CAP_NET_ADMIN", .{}),
             error.WrongSeq => std.log.err("wrong sequence number as last error for sendBatch, either there is a bug in the code, either the kernel was late sending ACKs twice in a row", .{}),
@@ -185,6 +204,13 @@ fn init(conf: config.Config) !u8 {
 const cli = @import("cli/root.zig");
 
 pub fn main() !u8 {
+    // try to reload config on sighup
+    posix.sigaction(posix.SIG.HUP, &.{
+        .handler = .{ .handler = sigHupHandler, },
+        .mask = posix.sigemptyset(),
+        .flags = 0,
+    }, null);
+
     // use std.heap.c_allocator to see memory usage in valgrind
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -193,9 +219,7 @@ pub fn main() !u8 {
     var root = try cli.build(allocator);
     defer root.deinit();
 
-    var data: cli.Data = .{
-        .config = null,
-    };
+    var data: cli.Data = .{};
     root.execute(.{
         .data = &data,
     }) catch |err| {
@@ -205,8 +229,9 @@ pub fn main() !u8 {
         }
     };
 
-    if (data.config) |conf| {
-        return init(conf) catch |err| {
+    if (data.needToServe) {
+        if (config.state == .NotLoaded) unreachable;
+        return init() catch |err| {
             std.log.err("init failed : {s}", .{@errorName(err)});
             return 1;
         };
