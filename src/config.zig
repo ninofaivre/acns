@@ -6,7 +6,8 @@ pub const Config = struct {
     // using array hash map to retain order for future regex support
     const Tables = std.StringArrayHashMap(std.StringArrayHashMap(void));
     socketPath: []const u8,
-    resetTimeout: bool = true,
+    resetTimeout: bool,
+    timeoutKernelAcksInMs: u6,
     accessControl: union (enum) {
         Disabled: void,
         Enabled: struct {
@@ -23,6 +24,7 @@ pub const Config = struct {
 const ZonConfig = struct {
     socketPath: []const u8,
     resetTimeout: bool = true,
+    timeoutKernelAcksInMs: u6 = 0,
     accessControl: struct {
         const Tables = std.zig.Zoir.Node.Index;
         enabled: bool = true,
@@ -88,6 +90,7 @@ pub fn load(configPath: []const u8, allocator: std.mem.Allocator) !Config {
     return .{
         .socketPath = zonConfig.socketPath,
         .resetTimeout = zonConfig.resetTimeout,
+        .timeoutKernelAcksInMs = zonConfig.timeoutKernelAcksInMs,
         .accessControl = if(zonConfig.accessControl.enabled) .{
             .Enabled = .{
                 .inet = try parseTables("inet", zonConfig.accessControl.inet,

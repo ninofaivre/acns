@@ -18,7 +18,7 @@ fn addSetElemNlmsgToBatch(batch: *mnl.NlmsgBatch, set: *nftnl.Set, attr: u16, fa
     try mnl.nlmsgBatchNext(batch);
 }
 
-fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, seq: u32) !usize {
+fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, seq: u32, expectedNMsgAck: u8, conf: config.Config) !void {
     _ = try mnl.socketSendto(nl, mnl.nlmsgBatchHead(batch), mnl.nlmsgBatchSize(batch));
 
     var fds: [1]posix.pollfd = .{
@@ -29,33 +29,27 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
         },
     };
 
-    var err: ?anyerror = null;
-    var nMsgAck: usize = 0;
-
-    var pollRet: usize = 0;
-    while (blk: {
-        pollRet = try posix.poll(&fds, 0);
-        break :blk pollRet > 0;
-    } and (fds[0].revents & posix.POLL.IN) != 0) : (nMsgAck += 1) {
+    var retErr: ?anyerror = null;
+    var nAck: u8 = 0;
+    // The second condition is not strictly needed as poll is only watching
+    // for posix.POLL.IN event and only for one fd but I think it is best
+    // practice to check anyway, it could avoir future footgun.
+    while (nAck != expectedNMsgAck and
+        (try posix.poll(&fds, conf.timeoutKernelAcksInMs) > 0) and
+        (fds[0].revents & posix.POLL.IN) != 0
+    ) {
         const retRecv = try mnl.socketRecvfrom(nl, &buff[0], @sizeOf(@TypeOf(buff.*)));
-        // TODO patch this ugly shit
-        const cbR = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| blk: {
-            if (err) |errr| {
-                if (errr == error.WrongSeq) err = e;
-            } else {
-                err = e;
+        _ = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| {
+            if (e != error.WrongSeq) {
+                continue ;
+            } else if (retErr == null) {
+                retErr = e;
             }
-            break :blk null;
         };
-        if (cbR != null) {
-            if (err) |errr| {
-                if (errr == error.WrongSeq)
-                    err = null;
-            }
-        }
+        nAck += 1;
     }
-    if (err) |e| return e;
-    return nMsgAck;
+    if (retErr) |e| return e;
+    if (nAck != expectedNMsgAck) return error.TooFewAck;
 }
 
 pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources, conf: config.Config) !void {
@@ -81,7 +75,7 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
     _ = nftnl.batchBegin(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
     try mnl.nlmsgBatchNext(batch);
 
-    var expectedNMsgAck: usize = 1;
+    var expectedNMsgAck: u8 = 1;
     try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
     if (conf.resetTimeout)  {
         expectedNMsgAck += 2;
@@ -92,15 +86,10 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
     _ = nftnl.batchEnd(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
     try mnl.nlmsgBatchNext(batch);
 
-    const nMsgAck = sendBatch(nl, batch, buff, seq) catch |err| {
+    sendBatch(nl, batch, buff, seq, expectedNMsgAck, conf) catch |err| {
         return switch (err) {
             error.PathNotFound => error.SetPathNotFound,
             else => err,
         };
     };
-    if (nMsgAck < expectedNMsgAck) {
-        return error.ReceivedTooFewAck;
-    } else if (nMsgAck > expectedNMsgAck) {
-        return error.ReceivedTooManyAck;
-    }
 }

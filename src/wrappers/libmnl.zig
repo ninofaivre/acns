@@ -97,7 +97,6 @@ pub fn nlmsgBatchSize(batch: *c.mnl_nlmsg_batch) usize {
 
 pub fn cbRun(buff: *anyopaque, numbytes: usize, seq: u32, portid: u32, cbData: c.mnl_cb_t, data: ?*anyopaque) !u32 {
     const ret = c.mnl_cb_run(buff, numbytes, seq, portid, cbData, data);
-    if (posix.errno(ret) != .SUCCESS) std.log.debug("cbRun, errno : {s}", .{@tagName(posix.errno(ret))});
     return switch (posix.errno(ret)) {
         .SUCCESS => @intCast(ret),
         .PERM => error.Permission,

@@ -118,16 +118,27 @@ fn serve(sockFd: i32, resources: mynft.Resources, conf: config.Config) !void {
             std.log.warn("{s} : nft path not authorized", .{ message });
             continue;
         }
-        mynft.addIpToSet(.{ .tableName = message.tableName, .family = message.familyType, .name = message.setName }, message.ip.value, resources, conf) catch |err| {
+        mynft.addIpToSet(.{
+                .tableName = message.tableName,
+                .family = message.familyType,
+                .name = message.setName
+            }, message.ip.value, resources, conf
+        ) catch |e| {
             buff[0] = 1;
-            sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
-            switch (err) {
-                error.Permission, error.WrongSeq => return err,
-                else => {
-                    std.log.warn("while inserting {s} : {s}", .{ message, @errorName(err) });
-                    continue;
-                },
-            }
+            sendAck(sockFd, buff[0..1],
+                @ptrCast(&clientAddr), clientAddrLen);
+            if (e == error.Permission) return e;
+            std.log.warn("while inserting {s} : {s}", .{
+                message,
+                switch (e) {
+                    error.TooFewAck =>
+                        "the kernel was too slow sending ACKs",
+                    error.SetPathNotFound =>
+                        "the path for this set was not found",
+                    else => @errorName(e),
+                }
+            });
+            continue;
         };
         buff[0] = 0;
         sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
