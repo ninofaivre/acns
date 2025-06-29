@@ -31,34 +31,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // ---Libs Paths--- //
-    //
-    if (getEnvVar(b.allocator, "NIX_LDFLAGS")) |nixLdFlagsEnv| {
-        var nixLdFlagsIt = std.mem.splitScalar(u8, nixLdFlagsEnv, ' ');
-
-        while (nixLdFlagsIt.next()) |word| {
-            if (word.len < 3 or !std.mem.eql(u8, word[0..2], "-L")) continue;
-            exe.addLibraryPath(.{ .cwd_relative = word[2..] });
-        }
-    }
-    //
-    // ---Libs Paths--- //
-
-    // ---Includes Paths--- //
-    //
-    if (getEnvVar(b.allocator, "NIX_CFLAGS_COMPILE")) |nixCFlagsCompileEnv| {
-        var nixCFlagsCompileIt = std.mem.splitScalar(u8, nixCFlagsCompileEnv, ' ');
-
-        while (nixCFlagsCompileIt.next()) |word| {
-            if (!std.mem.eql(u8, word, "-isystem")) continue;
-            if (nixCFlagsCompileIt.next()) |path| {
-                exe.addIncludePath(.{ .cwd_relative = path });
-            }
-        }
-    }
-    //
-    // ---Includes Paths--- //
-
     // ---Options--- //
     //
     const options = b.addOptions();

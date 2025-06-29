@@ -2,85 +2,116 @@
   description = "A Nix flake for building the Zig program 'acn'";
 
   inputs = {
-    nixpkgs.url = "nixpkgs/release-25.05";
-    zigpkgs.url = "github:mitchellh/zig-overlay";
+    zig2nix.url = "github:Cloudef/zig2nix";
     nix2zon.url = "github:ninofaivre/nix2zon";
+    nixpkgs.url = "nixpkgs/release-25.05";
   };
 
-  outputs = { self, zigpkgs, nixpkgs, nix2zon }:
-    let
-      system = "x86_64-linux";
-      overlays = [
-        (final: prev: {
-          zig = zigpkgs.packages.${prev.system}.master.overrideAttrs (f: p: {
-            meta = prev.zig.meta // zigpkgs.packages.${final.system}.master.meta;
-          });
-        })
-      ];
-      basePkgs = import nixpkgs { inherit system; };
-      pkgs = import nixpkgs { inherit system overlays; };
-      inherit (nixpkgs) lib;
-
-      inherit (nix2zon.lib) toZon;
-
+  outputs = { zig2nix, nix2zon, nixpkgs, ... }: let
+    flake-utils = zig2nix.inputs.flake-utils;
+    inherit (nix2zon.lib) toZon;
+  in (flake-utils.lib.eachDefaultSystem (system: let
+      env = zig2nix.outputs.zig-env.${system} {
+        inherit nixpkgs;
+        zig = zig2nix.outputs.packages.${system}.zig-master;
+      };
       name = "acns";
       version = "0.0.1";
-      zigDeps = import ./nix/deps.nix { inherit (pkgs) fetchFromGitHub; };
-    in {
-      packages.${system}.${name} = pkgs.stdenv.mkDerivation {
-        meta = {
-          mainProgram = name;
-        };
+      zigDeps = import ./nix/deps.nix {inherit (env.pkgs) fetchFromGitHub;};
+    in with builtins; with env.pkgs.lib; rec {
+      # nix build .#foreign
+      packages.foreign = env.package {
+        meta.mainProgram = name;
         inherit name;
         inherit version;
-        src = ./.;
+        src = cleanSource ./.;
 
-        zigBuildFlags = [];
-
-        nativeBuildInputs = with pkgs; [
-          basePkgs.zig.hook
+        nativeBuildInputs = with env.pkgs; [
           libnl.dev
           linuxHeaders
-        ] ++ builtins.attrValues zigDeps;
-        buildInputs = with pkgs; [
+        ] ++ attrValues zigDeps;
+
+        buildInputs = with env.pkgs; [
           libnftnl
           libnl.bin
           libmnl
         ];
-        postPatch = ''
+
+        preBuild = ''
           rm -rf deps
           mkdir deps
-          ${lib.strings.concatMapStrings (value: ''
-            ln -s ${value} ./deps/${lib.removePrefix "/nix/store/" value}
-          '')  (lib.attrsets.attrValues zigDeps)}
+          ${concatMapStrings (value: ''
+            ln -s ${value} ./deps/${removePrefix "/nix/store/" value}
+          '')  (attrValues zigDeps)}
           >build.zig.zon cat <<< '${toZon { value = {
             name = ".${name}";
             fingerprint = "0xda3d5caca4187a84";
             inherit version;
             paths = [ "src" "build.zig" ];
-            dependencies = builtins.mapAttrs (name: value: {
-              path = "\\./deps/${lib.removePrefix "/nix/store/" value}/";
+            dependencies = mapAttrs (name: value: {
+              path = "\\./deps/${removePrefix "/nix/store/" value}/";
             }) zigDeps;
           }; }}'
         '';
+
+        # Smaller binaries and avoids shipping glibc.
+        zigPreferMusl = true;
       };
 
-      defaultPackage.${system} = self.packages.${system}.${name};
+      # nix build .
+      packages.default = packages.foreign.override (attrs: {
+        # Prefer nix friendly settings.
+        zigPreferMusl = false;
 
-      devShell.${system} = with self.packages.${system}; pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [
-          zig
-          (import ./nix/simpleClient.sh.nix {
-            inherit pkgs;
-            projectName = name;
-          })
-        ] ++ acns.buildInputs ++ builtins.filter (pkg: pkg != basePkgs.zig.hook) acns.nativeBuildInputs;
+        # Executables required for runtime
+        # These packages will be added to the PATH
+        zigWrapperBins = with env.pkgs; [];
+
+        # Libraries required for runtime
+        # These packages will be added to the LD_LIBRARY_PATH
+        zigWrapperLibs = attrs.buildInputs or [];
+      });
+
+      # For bundling with nix bundle for running outside of nix
+      # example: https://github.com/ralismark/nix-appimage
+      apps.bundle = {
+        type = "app";
+        program = "${packages.foreign}/bin/master";
+      };
+
+      # nix run .
+      apps.default = env.app [] "zig build run -- \"$@\"";
+
+      # nix run .#build
+      apps.build = env.app [] "zig build \"$@\"";
+
+      # nix run .#test
+      apps.test = env.app [] "zig build test -- \"$@\"";
+
+      # nix run .#docs
+      apps.docs = env.app [] "zig build docs -- \"$@\"";
+
+      # nix run .#zig2nix
+      apps.zig2nix = env.app [] "zig2nix \"$@\"";
+
+      # nix develop
+      devShells.default = env.mkShell {
         shellHook = ''
           export PATH="''${PATH}:''${PWD}/zig-out/bin"
           alias build="zig build"
           alias b="build"
-          ${acns.postPatch}
+          ${packages.foreign.preBuild}
         '';
+        nativeBuildInputs = [
+            (import ./nix/simpleClient.sh.nix {
+              inherit (env) pkgs;
+              projectName = name;
+            })
+          ]
+          ++ packages.default.nativeBuildInputs
+          ++ packages.default.buildInputs
+          ++ packages.default.zigWrapperBins
+          ++ packages.default.zigWrapperLibs;
       };
-    };
+    }));
 }
