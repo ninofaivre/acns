@@ -4,6 +4,7 @@ const posix = std.posix;
 const nftnl = @import("wrappers/libnftnl.zig");
 const mnl = @import("wrappers/libmnl.zig");
 const config = @import("config.zig");
+const message = @import("message.zig");
 
 pub const Resources = struct { seq: *u32, buff: *[2 * mnl.SOCKET_BUFFER_SIZE]u8, nl: *mnl.Socket, batch: *mnl.NlmsgBatch };
 
@@ -40,7 +41,7 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     ) {
         const retRecv = try mnl.socketRecvfrom(nl, &buff[0], @sizeOf(@TypeOf(buff.*)));
         _ = mnl.cbRun(@ptrCast(&buff[0]), retRecv, seq, mnl.socketGetPortid(nl), null, null) catch |e| {
-            if (e != error.WrongSeq) {
+            if (e == error.WrongSeq) {
                 continue ;
             } else if (retErr == null) {
                 retErr = e;
@@ -52,7 +53,7 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     if (nAck != expectedNMsgAck) return error.TooFewAck;
 }
 
-pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]const u8 }, ip: u32, resources: Resources) !void {
+pub fn addIpToSetFromMessage(msg: message.Message, resources: Resources) !void {
     resources.seq.* += 1;
 
     const seq = resources.seq.*;
@@ -63,12 +64,18 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
     const s = try nftnl.setAlloc();
     defer nftnl.setFree(s);
 
-    try nftnl.setSetStr(s, nftnl.SET_TABLE, set.tableName);
-    try nftnl.setSetStr(s, nftnl.SET_NAME, set.name);
+    try nftnl.setSetStr(s, nftnl.SET_TABLE, msg.tableName);
+    try nftnl.setSetStr(s, nftnl.SET_NAME, msg.setName);
 
     const e = try nftnl.setElemAlloc();
     nftnl.setElemAdd(s, e);
-    try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY, &ip, @sizeOf(@TypeOf(ip)));
+    if (msg.ip == .v4) {
+        try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY,
+            &msg.ip.v4.value, @sizeOf(message.Message.IP.IPv4.Value));
+    } else {
+        try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY,
+            &msg.ip.v6.value, @sizeOf(message.Message.IP.IPv6.Value));
+    }
 
     mnl.nlmsgBatchReset(batch);
 
@@ -76,11 +83,11 @@ pub fn addIpToSet(set: struct { family: u16, tableName: [*c]const u8, name: [*c]
     try mnl.nlmsgBatchNext(batch);
 
     var expectedNMsgAck: u8 = 1;
-    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
+    try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, msg.familyType, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
     if (config.conf.resetTimeout)  {
         expectedNMsgAck += 2;
-        try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_DELSETELEM, set.family, c.NLM_F_ACK, seq);
-        try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, set.family, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
+        try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_DELSETELEM, msg.familyType, c.NLM_F_ACK, seq);
+        try addSetElemNlmsgToBatch(batch, s, c.NFT_MSG_NEWSETELEM, msg.familyType, c.NLM_F_CREATE | c.NLM_F_REPLACE | c.NLM_F_ACK, seq);
     }
 
     _ = nftnl.batchEnd(@ptrCast(mnl.nlmsgBatchCurrent(batch)), seq);
