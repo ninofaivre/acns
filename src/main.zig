@@ -10,6 +10,9 @@ const message = @import("message.zig");
 const c = @cImport({
     @cInclude("linux/netlink.h");
     @cInclude("linux/netfilter/nf_tables.h");
+    @cInclude("grp.h"); //getgrnam
+    @cInclude("unistd.h"); //chown
+    @cInclude("sys/stat.h"); //chmod
 });
 
 fn sendAck(sockFd: i32, buf: []const u8, destAddr: ?*const posix.sockaddr, addrlen: posix.socklen_t) void {
@@ -106,7 +109,15 @@ fn serve(sockFd: i32, resources: mynft.Resources) !void {
     }
 }
 
-fn init() !u8 {
+fn getGroupIdFromName(groupName: []const u8, allocator: std.mem.Allocator) !std.posix.gid_t {
+    const cGroupName = try allocator.dupeZ(u8, groupName);
+    defer allocator.free(cGroupName);
+
+    const groupInfo = c.getgrnam(cGroupName.ptr) orelse return error.GroupNotfound;
+    return groupInfo.*.gr_gid;
+}
+
+fn init(allocator: std.mem.Allocator) !u8 {
     var buff: [2 * mnl.SOCKET_BUFFER_SIZE]u8 = undefined;
 
     // should be safe if just using current time
@@ -122,6 +133,7 @@ fn init() !u8 {
 
     const resources: mynft.Resources = .{ .seq = &seq, .buff = &buff, .nl = @ptrCast(nl), .batch = @ptrCast(batch) };
 
+    _ = std.c.umask(0o077);
     const sockFd = try posix.socket(posix.AF.UNIX, posix.SOCK.DGRAM, 0);
     defer posix.close(sockFd);
 
@@ -129,6 +141,15 @@ fn init() !u8 {
     posix.unlink(config.conf.socketPath) catch {};
     try posix.bind(sockFd, &addr.any, addr.getOsSockLen());
     defer posix.unlink(config.conf.socketPath) catch {};
+
+    const cSocketPath = try allocator.dupeZ(u8, config.conf.socketPath);
+    if (config.conf.socketGroupName) |socketGroupName| {
+        const groupId = try getGroupIdFromName(socketGroupName, allocator);
+        // TODO check for errors
+        _ = c.chown(cSocketPath, posix.getuid(), groupId);
+    }
+    // TODO check for errors
+    _ = c.chmod(cSocketPath, 0o620);
 
     std.log.info("listening on unix dgram sock {s}", .{config.conf.socketPath});
     serve(sockFd, resources) catch |err| {
@@ -172,7 +193,7 @@ pub fn main() !u8 {
 
     if (data.needToServe) {
         if (config.state == .NotLoaded) unreachable;
-        return init() catch |err| {
+        return init(allocator) catch |err| {
             std.log.err("init failed : {s}", .{@errorName(err)});
             return 1;
         };

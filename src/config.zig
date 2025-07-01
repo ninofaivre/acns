@@ -6,6 +6,7 @@ pub const Config = struct {
     // using array hash map to retain order for future regex support
     const Tables = std.StringArrayHashMap(std.StringArrayHashMap(void));
     socketPath: []const u8,
+    socketGroupName: ?[]const u8,
     resetTimeout: bool,
     timeoutKernelAcksInMs: u6,
     accessControl: union (enum) {
@@ -23,6 +24,7 @@ pub const Config = struct {
 
 const ZonConfig = struct {
     socketPath: []const u8,
+    socketGroupName: ?[]const u8 = null,
     resetTimeout: bool = true,
     timeoutKernelAcksInMs: u6 = 0,
     accessControl: struct {
@@ -99,6 +101,7 @@ fn _load(configPath: []const u8, allocator: std.mem.Allocator) !void {
 
     conf = .{
         .socketPath = zonConfig.socketPath,
+        .socketGroupName = zonConfig.socketGroupName,
         .resetTimeout = zonConfig.resetTimeout,
         .timeoutKernelAcksInMs = zonConfig.timeoutKernelAcksInMs,
         .accessControl = if(zonConfig.accessControl.enabled) .{
