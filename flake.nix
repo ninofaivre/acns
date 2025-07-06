@@ -7,10 +7,10 @@
     nixpkgs.url = "nixpkgs/release-25.05";
   };
 
-  outputs = { zig2nix, nix2zon, nixpkgs, ... }: let
+  outputs = { self, zig2nix, nix2zon, nixpkgs, ... }: let
     flake-utils = zig2nix.inputs.flake-utils;
     inherit (nix2zon.lib) toZon;
-  in (flake-utils.lib.eachDefaultSystem (system: let
+    package = (flake-utils.lib.eachDefaultSystem (system: let
       env = zig2nix.outputs.zig-env.${system} {
         inherit nixpkgs;
         zig = zig2nix.outputs.packages.${system}.zig-master;
@@ -29,11 +29,11 @@
         nativeBuildInputs = with env.pkgs; [
           libnl.dev
           linuxHeaders
+          autoPatchelfHook
         ] ++ attrValues zigDeps;
 
         buildInputs = with env.pkgs; [
           libnftnl
-          libnl.bin
           libmnl
         ];
 
@@ -71,6 +71,8 @@
         # These packages will be added to the LD_LIBRARY_PATH
         zigWrapperLibs = attrs.buildInputs or [];
       });
+
+      packages.acns = packages.default;
 
       # For bundling with nix bundle for running outside of nix
       # example: https://github.com/ralismark/nix-appimage
@@ -114,4 +116,10 @@
           ++ packages.default.zigWrapperLibs;
       };
     }));
+  in ({
+      nixosModules.acns = (import ./nix/nixosModule.nix {
+        acnsSystemPkgs = package.packages;
+        inherit toZon;
+      });
+    } // package);
 }
