@@ -1,5 +1,5 @@
 {
-  description = "A Nix flake for building the Zig program 'acn'";
+  description = "A Nix flake for building the Zig program 'acns'";
 
   inputs = {
     zig2nix.url = "github:Cloudef/zig2nix";

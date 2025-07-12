@@ -10,22 +10,12 @@ const buildZon: struct {
     paths: []const []const u8,
 } = @import("build.zig.zon");
 
-fn missingOption(optionName: []const u8) void {
-    std.debug.panic("Build option '{s}' is missing, build cannot proceed, this option is mandatory.", .{optionName});
-}
-
-fn getEnvVar(allocator: std.mem.Allocator, name: []const u8) ?[]u8 {
-    return std.process.getEnvVarOwned(allocator, name) catch {
-        return null;
-    };
-}
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "acns",
+        .name = @tagName(buildZon.name),
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
