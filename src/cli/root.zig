@@ -10,7 +10,7 @@ pub const Data = struct {
 
 pub fn build(allocator: std.mem.Allocator) !*zli.Command {
     const root = try zli.Command.init(allocator, .{
-        .name = "acns",
+        .name = buildOptions.name,
         .description = "Access Controlled Nftables Sets",
         .version = buildOptions.version,
     }, base);

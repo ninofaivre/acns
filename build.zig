@@ -30,6 +30,7 @@ pub fn build(b: *std.Build) void {
     } else |err| {
         std.debug.panic("Version need to be semantic ([major].[minor].[patch]) : {s}", .{@errorName(err)});
     }
+    options.addOption([]const u8, "name", @tagName(buildZon.name));
 
     exe.root_module.addImport("buildOptions", options.createModule());
     //
