@@ -10,12 +10,12 @@
   outputs = { self, zig2nix, nix2zon, nixpkgs, ... }: let
     flake-utils = zig2nix.inputs.flake-utils;
     inherit (nix2zon.lib) toZon;
+    name = "acns";
     package = (flake-utils.lib.eachDefaultSystem (system: let
       env = zig2nix.outputs.zig-env.${system} {
         inherit nixpkgs;
         zig = zig2nix.outputs.packages.${system}.zig-master;
       };
-      name = "acns";
       version = "0.0.1";
       zigDeps = import ./nix/deps.nix {inherit (env.pkgs) fetchFromGitHub;};
     in with builtins; with env.pkgs.lib; rec {
@@ -72,7 +72,7 @@
         zigWrapperLibs = attrs.buildInputs or [];
       });
 
-      packages.acns = packages.default;
+      packages.${name} = packages.default;
 
       # For bundling with nix bundle for running outside of nix
       # example: https://github.com/ralismark/nix-appimage
@@ -117,7 +117,7 @@
       };
     }));
   in ({
-      nixosModules.acns = (import ./nix/nixosModule.nix {
+      nixosModules.${name} = (import ./nix/nixosModule.nix {
         acnsSystemPkgs = package.packages;
         inherit toZon;
       });

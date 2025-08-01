@@ -16,9 +16,18 @@ const c = @cImport({
 });
 
 fn sendAck(sockFd: i32, buf: []const u8, destAddr: ?*const posix.sockaddr, addrlen: posix.socklen_t) void {
-    if (addrlen == 0) return; // check if addrlen 0 cause sendto to fail
+    if (addrlen == 0 or destAddr == null) return; // check if addrlen 0 cause sendto to fail
     _ = posix.sendto(sockFd, buf, 0, destAddr, addrlen) catch |err| {
-        std.log.warn("while trying to send ack : {s}", .{@errorName(err)});
+        if (destAddr.?.family == posix.AF.UNIX) {
+            std.log.warn("while trying to send ack at socket {s} : {s}", .{
+                // TODO : why tf does it print "blob" ? I guess it has smth
+                // to do with the fact that path is a [108]u8...
+                @as(*const posix.sockaddr.un, @ptrCast(destAddr)).path,
+                @errorName(err)
+            });
+        } else {
+            std.log.warn("ack addr is not a socket !", .{});
+        }
     };
 }
 

@@ -42,6 +42,9 @@ in
     };
   };
   config = lib.mkIf cfg.enable {
+    # TODO autogenerate group name like : acnsAccess followed by
+    # instanceName (ex : kresd) : ex : acnsAccessKresd
+    # TODO do a second group fot the ack socket : kresdAccessAcns
     users.groups.${cfg.unixSocketAccessGroupName} = {};
     environment.etc.${etcRelativeConfigPath} = lib.mkIf cfg.enableReload {
       source = configFile;
@@ -52,6 +55,7 @@ in
       enable = cfg.enable;
       serviceConfig = {
         RuntimeDirectory = [ "acns" ];
+        RuntimeDirectoryMode = "0771";
         WorkingDirectory = "/run/acns";
         ExecStart = "${lib.getExe acnsPkgs.acns} -c ${configFilePath}";
         ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
