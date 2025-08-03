@@ -67,7 +67,7 @@ fn parseTables(familyName: []const u8, familyNodeIndex: ?std.zig.Zoir.Node.Index
         var diagnostics: std.zon.parse.Diagnostics = .{};
         const setNames = std.zon.parse.fromZoirNode([][]const u8, allocator, ast, zoir, setNamesNode, &diagnostics, .{}) catch |err| {
             if (err == error.ParseZon)
-                std.log.err("in configFile {s} : {}", .{configPath, diagnostics});
+                std.log.err("in configFile {s} : {f}", .{configPath, diagnostics});
             return err;
         };
         var setNamesHashMap = std.StringArrayHashMap(void).init(allocator);
@@ -95,7 +95,7 @@ fn _load(configPath: []const u8, allocator: std.mem.Allocator) !void {
     var diagnostics: std.zon.parse.Diagnostics = .{};
     const zonConfig = std.zon.parse.fromZoir(ZonConfig, allocator, ast, zoir, &diagnostics, .{}) catch |err| {
         if (err == error.ParseZon)
-            std.log.err("in configFile \"{s}\" : {}", .{configPath, diagnostics});
+            std.log.err("in configFile \"{s}\" : {f}", .{configPath, diagnostics});
         return err;
     };
 

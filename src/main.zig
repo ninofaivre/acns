@@ -44,7 +44,7 @@ fn isNftablesPathAuthorized(msg: message.Message) bool {
             7 => break :blk accessControl.bridge,
             10 => break :blk accessControl.ip6,
             else => {
-                std.log.warn("{} : family type unknown (not one of [1,2,3,5,7,10] : {}\n", .{msg, msg.familyType});
+                std.log.warn("{f} : family type unknown (not one of [1,2,3,5,7,10] : {d}\n", .{msg, msg.familyType});
                 return false;
             },
         }
@@ -60,7 +60,7 @@ fn isNftablesPathAuthorized(msg: message.Message) bool {
 
 var testob: bool = false;
 
-fn sigHupHandler(sigNum: c_int) callconv(.C) void {
+fn sigHupHandler(sigNum: c_int) callconv(.c) void {
     _ = sigNum;
     config.reload() catch |err| {
         switch (err) {
@@ -92,7 +92,7 @@ fn serve(sockFd: i32, resources: mynft.Resources) !void {
         if (!isNftablesPathAuthorized(msg)) {
             buff[0] = 1;
             sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
-            std.log.warn("{s} : nft path not authorized", .{ msg });
+            std.log.warn("{f} : nft path not authorized", .{ msg });
             continue;
         }
         mynft.addIpToSetFromMessage(msg, resources) catch |e| {
@@ -100,7 +100,7 @@ fn serve(sockFd: i32, resources: mynft.Resources) !void {
             sendAck(sockFd, buff[0..1],
                 @ptrCast(&clientAddr), clientAddrLen);
             if (e == error.Permission) return e;
-            std.log.warn("while inserting {s} : {s}", .{
+            std.log.warn("while inserting {f} : {s}", .{
                 msg,
                 switch (e) {
                     error.TooFewAck =>
@@ -114,7 +114,7 @@ fn serve(sockFd: i32, resources: mynft.Resources) !void {
         };
         buff[0] = 0;
         sendAck(sockFd, buff[0..1], @ptrCast(&clientAddr), clientAddrLen);
-        std.log.debug("inserted {s}", .{msg});
+        std.log.debug("inserted {f}", .{msg});
     }
 }
 

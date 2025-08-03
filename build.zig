@@ -14,11 +14,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = @tagName(buildZon.name),
+    const rootModule = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+    });
+    const exe = b.addExecutable(.{
+        .name = @tagName(buildZon.name),
+        .root_module = rootModule,
     });
 
     // ---Options--- //
@@ -45,7 +48,8 @@ pub fn build(b: *std.Build) void {
 
     // ---Link Libs--- //
     //
-    exe.linkLibC();
+    // exe.linkLibC();
+    exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("nftnl");
     exe.linkSystemLibrary("nl-3");
     exe.linkSystemLibrary("mnl");

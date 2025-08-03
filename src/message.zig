@@ -7,19 +7,16 @@ const c = @cImport({
 
 pub const Message = struct {
     pub const IP = union(enum) {
-        pub fn format(self: IP, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt; _ = options;
-
+        pub fn format(self: IP, writer: anytype) !void {
             switch (self) {
-                .v4 => try writer.print("v4[{}]", .{self.v4}),
-                .v6 => try writer.print("v6[{}]", .{self.v6}),
+                .v4 => try writer.print("v4[{f}]", .{self.v4}),
+                .v6 => try writer.print("v6[{f}]", .{self.v6}),
             }
         }
         pub const IPv4 = struct {
             pub const Value = u32;
             value: Value,
-            pub fn format(self: IPv4, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = fmt; _ = options;
+            pub fn format(self: IPv4, writer: anytype) !void {
 
                 try writer.print("{d}.{d}.{d}.{d}", .{
                     @as(u8, @truncate(self.value)),
@@ -32,13 +29,9 @@ pub const Message = struct {
         pub const IPv6 = struct {
             pub const Value = u128;
             value: Value,
-            pub fn format(self: IPv6, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = fmt; _ = options;
-
-                var buffer: io.BufferedWriter(8-1+4*8, @TypeOf(writer)) = .{
-                    .unbuffered_writer = writer,
-                };
-                var buffWriter = buffer.writer();
+            pub fn format(self: IPv6, writer: anytype) !void {
+                var buffer: [8-1+4*8]u8 = undefined;
+                writer.buffer = &buffer;
 
                 var nProcessedBits: u8 = 0;
                 var doubleColonUsed = false;
@@ -50,11 +43,11 @@ pub const Message = struct {
                         if (doubleColonUsed == false) {
                             doubleColonUsed = true;
                             doubleColonInUse = true;
-                            try buffWriter.print("::", .{});
+                            try writer.print("::", .{});
                         }
                         if (doubleColonInUse) continue;
                     }
-                    try buffWriter.print("{s}{x}", .{
+                    try writer.print("{s}{x}", .{
                         if (nProcessedBits == 0 or doubleColonInUse)
                             ""
                         else
@@ -63,7 +56,7 @@ pub const Message = struct {
                     });
                     doubleColonInUse = false;
                 }
-                try buffer.flush();
+                try writer.flush();
             }
         };
         v4: IPv4,
@@ -74,12 +67,8 @@ pub const Message = struct {
     ip: IP, 
     familyType: u16,
 
-    pub fn format(self: Message, comptime fmt: []const u8,
-        options: std.fmt.FormatOptions, writer: anytype
-    ) !void {
-        _ = fmt; _ = options;
-
-        try writer.print("ip{d} in family[{d}] -> tableName[{s}] -> setName[{s}]", .{ self.ip, self.familyType, self.tableName, self.setName });
+    pub fn format(self: Message, writer: anytype) !void {
+        try writer.print("ip{f} in family[{d}] -> tableName[{s}] -> setName[{s}]", .{ self.ip, self.familyType, self.tableName, self.setName });
     }
 };
 

@@ -1,11 +1,10 @@
 { fetchFromGitHub }:
 {
+  # use official repo (caeser) when zig 0.15.0 is released
   zli = fetchFromGitHub {
-    owner = "xcaeser";
+    owner = "ninofaivre";
     repo = "zli";
-    # not the latest version because latest version can't be build with
-    # zig 0.15.0-dev, upgrade version when 0.15.0 release I guess
-    rev = "v3.6.3";
-    sha256 = "73ycow6OyDEtS1oVGi1eM/kdVOikR3/QgvWjZVqCb1Y=";
+    rev = "763d758de6aead1287f011274ebd4c17c4010009";
+    sha256 = "7w8FuHDmRKNaneCXV/G7yf4PAAgW/K+8y/O41dWQju4=";
   };
 }

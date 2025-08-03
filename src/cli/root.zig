@@ -1,4 +1,5 @@
 const std = @import("std");
+const fmt = std.fmt;
 const zli = @import("zli");
 const config = @import("../config.zig");
 
@@ -49,21 +50,21 @@ fn base(ctx: zli.CommandContext) !void {
 
     const data = ctx.getContextData(Data);
     if (fVersion and nFlags > 1) {
-        try ctx.command.stderr.print("Flag 'version' cannot be combined with others flags.\n", .{});
+        try ctx.command.stderr.interface.writeAll("Flag 'version' cannot be combined with others flags.\n");
         return error.InvalidCommand;
     }
     if (fVersion)
-        try ctx.command.stdout.print("{?}\n", .{ctx.root.options.version});
+        try ctx.command.stdout.interface.print("{?f}\n", .{ctx.root.options.version});
     if (fConfig.len > 0) {
         data.*.needToServe = true;
         try config.load(fConfig, ctx.allocator);
     }
     if (fValidate) {
         if (fConfig.len == 0) {
-            try ctx.command.stderr.print("There is no config to validate.\n", .{});
+            try ctx.command.stderr.interface.writeAll("There is no config to validate.\n");
             return error.InvalidCommand;
         }
-        try ctx.command.stdout.print("Config passed !\n", .{});
+        try ctx.command.stdout.interface.writeAll("Config passed !\n");
         data.*.needToServe = false;
     }
     if (nFlags == 0)
