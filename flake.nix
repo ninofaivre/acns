@@ -7,7 +7,7 @@
     nixpkgs.url = "nixpkgs/release-25.05";
   };
 
-  outputs = { self, zig2nix, nix2zon, nixpkgs, ... }: let
+  outputs = { zig2nix, nix2zon, nixpkgs, ... }: let
     flake-utils = zig2nix.inputs.flake-utils;
     inherit (nix2zon.lib) toZon;
     name = "acns";
@@ -27,6 +27,7 @@
         src = cleanSource ./.;
 
         nativeBuildInputs = with env.pkgs; [
+          glibc.dev
           libnl.dev
           linuxHeaders
           autoPatchelfHook
@@ -37,7 +38,26 @@
           libmnl
         ];
 
+        /* TODO
+          zig-libc.txt was not needed with the older version of zig-0.15.0
+          need to figure out why it is now needed to use the correct libc
+          and not fail at linking stage. It is still not needed in devshell
+          while building with 'zig build' but somehow is needed for the build
+          stage of zig2nix.
+        */
         preBuild = ''
+          # Créer le fichier de config libc pour Zig
+          >zig-libc.txt cat <<< '
+          include_dir=${env.pkgs.glibc.dev}/include
+          sys_include_dir=${env.pkgs.linuxHeaders}/include
+          crt_dir=${env.pkgs.glibc}/lib
+          msvc_lib_dir=
+          kernel32_lib_dir=
+          gcc_dir=;
+          '
+          # Forcer Zig à utiliser ce fichier
+          export ZIG_LIBC=$PWD/zig-libc.txt
+
           rm -rf deps
           mkdir deps
           ${concatMapStrings (value: ''
@@ -54,15 +74,11 @@
           }; }}'
         '';
 
-        # Smaller binaries and avoids shipping glibc.
-        zigPreferMusl = true;
+        zigPreferMusl = false;
       };
 
       # nix build .
       packages.default = packages.foreign.override (attrs: {
-        # Prefer nix friendly settings.
-        zigPreferMusl = true;
-
         # Executables required for runtime
         # These packages will be added to the PATH
         zigWrapperBins = with env.pkgs; [];

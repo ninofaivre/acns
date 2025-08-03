@@ -48,8 +48,7 @@ pub fn build(b: *std.Build) void {
 
     // ---Link Libs--- //
     //
-    // exe.linkLibC();
-    exe.linkSystemLibrary("c");
+    exe.linkLibC();
     exe.linkSystemLibrary("nftnl");
     exe.linkSystemLibrary("nl-3");
     exe.linkSystemLibrary("mnl");
