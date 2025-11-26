@@ -187,7 +187,17 @@ pub fn main() !u8 {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var root = try cli.build(allocator);
+    // default reader and writer
+    var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
+    const stdout = &stdout_writer.interface;
+
+    var buf: [4096]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().readerStreaming(&buf);
+    const stdin = &stdin_reader.interface;
+    // TODO is a reader with a buffer really needed ? I don't think
+    // I need to read user input... Tmp to bump zli version
+
+    var root = try cli.build(stdout, stdin, allocator);
     defer root.deinit();
 
     var data: cli.Data = .{};

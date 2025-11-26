@@ -9,12 +9,11 @@
 
   outputs = { zig2nix, nix2zon, nixpkgs, ... }: let
     flake-utils = zig2nix.inputs.flake-utils;
-    inherit (nix2zon.lib) toZon;
     name = "acns";
     package = (flake-utils.lib.eachDefaultSystem (system: let
       env = zig2nix.outputs.zig-env.${system} {
         inherit nixpkgs;
-        zig = zig2nix.outputs.packages.${system}.zig-master;
+        zig = zig2nix.outputs.packages.${system}.zig-latest;
       };
       version = "0.0.1";
       zigDeps = import ./nix/deps.nix {inherit (env.pkgs) fetchFromGitHub;};
@@ -46,7 +45,6 @@
           stage of zig2nix.
         */
         preBuild = ''
-          # Créer le fichier de config libc pour Zig
           >zig-libc.txt cat <<< '
           include_dir=${env.pkgs.glibc.dev}/include
           sys_include_dir=${env.pkgs.linuxHeaders}/include
@@ -63,7 +61,7 @@
           ${concatMapStrings (value: ''
             ln -s ${value} ./deps/${removePrefix "/nix/store/" value}
           '')  (attrValues zigDeps)}
-          >build.zig.zon cat <<< '${toZon { value = {
+          >build.zig.zon cat <<< '${nix2zon.lib.toZon {
             name = ".${name}";
             fingerprint = "0xda3d5caca4187a84";
             inherit version;
@@ -71,7 +69,7 @@
             dependencies = mapAttrs (name: value: {
               path = "\\./deps/${removePrefix "/nix/store/" value}/";
             }) zigDeps;
-          }; }}'
+          }}'
         '';
 
         zigPreferMusl = false;
@@ -135,7 +133,9 @@
   in ({
       nixosModules.${name} = (import ./nix/nixosModule.nix {
         acnsSystemPkgs = package.packages;
-        inherit toZon;
+        toZon = nix2zon.lib.generators.toZon {
+          suppressNullAttrValues = true;
+        };
       });
     } // package);
 }

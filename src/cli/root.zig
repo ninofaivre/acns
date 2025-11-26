@@ -1,5 +1,4 @@
 const std = @import("std");
-const fmt = std.fmt;
 const zli = @import("zli");
 const config = @import("../config.zig");
 
@@ -9,8 +8,15 @@ pub const Data = struct {
     needToServe: bool = false,
 };
 
-pub fn build(allocator: std.mem.Allocator) !*zli.Command {
-    const root = try zli.Command.init(allocator, .{
+var stderr_writer = std.fs.File.stdout().writerStreaming(&.{});
+const stderr = &stderr_writer.interface;
+
+pub fn build(
+    writer: *std.Io.Writer,
+    reader: *std.Io.Reader,
+    allocator: std.mem.Allocator
+) !*zli.Command {
+    const root = try zli.Command.init(writer, reader, allocator, .{
         .name = buildOptions.name,
         .description = "Access Controlled Nftables Sets",
         .version = buildOptions.version,
@@ -50,21 +56,21 @@ fn base(ctx: zli.CommandContext) !void {
 
     const data = ctx.getContextData(Data);
     if (fVersion and nFlags > 1) {
-        try ctx.command.stderr.interface.writeAll("Flag 'version' cannot be combined with others flags.\n");
+        try stderr.writeAll("Flag 'version' cannot be combined with others flags.\n");
         return error.InvalidCommand;
     }
     if (fVersion)
-        try ctx.command.stdout.interface.print("{?f}\n", .{ctx.root.options.version});
+        try ctx.root.printVersion();
     if (fConfig.len > 0) {
         data.*.needToServe = true;
         try config.load(fConfig, ctx.allocator);
     }
     if (fValidate) {
         if (fConfig.len == 0) {
-            try ctx.command.stderr.interface.writeAll("There is no config to validate.\n");
+            try stderr.writeAll("There is no config to validate.\n");
             return error.InvalidCommand;
         }
-        try ctx.command.stdout.interface.writeAll("Config passed !\n");
+        try ctx.command.writer.writeAll("Config passed !\n");
         data.*.needToServe = false;
     }
     if (nFlags == 0)
