@@ -46,7 +46,7 @@
           name = ".${name}";
           fingerprint = "0xda3d5caca4187a84";
           inherit version;
-          paths = [ ./src ./build.zig ];
+          paths = [ "src" "build.zig" "build.zig.zon" ];
           dependencies = (import ./nix/deps.nix {
             inherit (env.pkgs) fetchFromGitHub;
           });
