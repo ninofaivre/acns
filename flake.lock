@@ -23,11 +23,11 @@
         "nixpkgs-lib": "nixpkgs-lib"
       },
       "locked": {
-        "lastModified": 1764529475,
-        "narHash": "sha256-W0Js9tGuV5/F6R/hYHcwFQ/MMdXxS/oGipfDEcjlwr0=",
+        "lastModified": 1765560151,
+        "narHash": "sha256-izsN6LyrPrj7szoZh09EBptrC/BjPxYC79aQKGhXOOg=",
         "owner": "ninofaivre",
         "repo": "nix2zon",
-        "rev": "645cf96db55c6bf77633ef27257197eff2813aeb",
+        "rev": "ef412aca4f36ca271750bd594e3c1e7678c18c77",
         "type": "github"
       },
       "original": {
@@ -53,11 +53,11 @@
     },
     "nixpkgs-lib": {
       "locked": {
-        "lastModified": 1763860531,
-        "narHash": "sha256-7AL5rgcGVjhYgZFbZQt1IndGcY27h5B5xi9OWtLlm6c=",
+        "lastModified": 1765070080,
+        "narHash": "sha256-5D1Mcm2dQ1aPzQ0sbXluHVUHququ8A7PKJd7M3eI9+E=",
         "owner": "nix-community",
         "repo": "nixpkgs.lib",
-        "rev": "11186dda9f7f43bbbfae3467c07660885263e801",
+        "rev": "e0cad9791b0c168931ae562977703b72d9360836",
         "type": "github"
       },
       "original": {

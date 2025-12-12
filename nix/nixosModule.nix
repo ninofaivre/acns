@@ -96,7 +96,7 @@ in
     systemd.services.acns = {
       restartIfChanged = true;
       reloadTriggers = [ configFile ];
-      enable = cfg.enable;
+      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         RuntimeDirectory = [ "acns" ];
         RuntimeDirectoryMode = "0771";

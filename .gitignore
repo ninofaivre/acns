@@ -1,6 +1,6 @@
-zig-libc.txt
 .zig-cache
 zig-out
 result
 build.zig.zon
-deps
+zigDeps
+.nixos-test-history

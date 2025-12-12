@@ -104,6 +104,7 @@ pub fn cbRun(buff: *anyopaque, numbytes: usize, seq: u32, portid: u32, cbData: c
         .SRCH => error.WrongPortId,
         .PROTO => error.WrongSeq,
         .INTR => error.InterruptedDump,
-        else => error.TODO_cbRun,
+        .INVAL => error.TimeoutFlagNotSet,
+        else => |errno| posix.unexpectedErrno(errno),
     };
 }

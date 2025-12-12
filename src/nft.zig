@@ -69,12 +69,12 @@ pub fn addIpToSetFromMessage(msg: message.Message, resources: Resources) !void {
 
     const e = try nftnl.setElemAlloc();
     nftnl.setElemAdd(s, e);
-    if (msg.ip == .v4) {
-        try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY,
-            &msg.ip.v4.value, @sizeOf(message.Message.IP.IPv4.Value));
-    } else {
-        try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY,
-            &msg.ip.v6.value, @sizeOf(message.Message.IP.IPv6.Value));
+    try nftnl.setElemSet(e, nftnl.SET_ELEM_KEY,
+        msg.ip.getDataPtr(), msg.ip.getDataLen());
+    if (msg.ttl) |ttl| {
+        // msg.ttl is an u32 so *1000 is safe
+        const msTtl = @as(u64, ttl) * 1000;
+        try nftnl.setElemSet(e, nftnl.SET_ELEM_TIMEOUT, &msTtl, @sizeOf(u64));
     }
 
     mnl.nlmsgBatchReset(batch);

@@ -7,12 +7,6 @@ const c = @cImport({
 
 pub const Message = struct {
     pub const IP = union(enum) {
-        pub fn format(self: IP, writer: anytype) !void {
-            switch (self) {
-                .v4 => try writer.print("v4[{f}]", .{self.v4}),
-                .v6 => try writer.print("v6[{f}]", .{self.v6}),
-            }
-        }
         pub const IPv4 = struct {
             pub const Value = u32;
             value: Value,
@@ -26,6 +20,7 @@ pub const Message = struct {
                 });
             }
         };
+
         pub const IPv6 = struct {
             pub const Value = u128;
             value: Value,
@@ -61,14 +56,54 @@ pub const Message = struct {
         };
         v4: IPv4,
         v6: IPv6,
+
+        pub fn format(self: *const IP, writer: anytype) !void {
+            switch (self.*) {
+                .v4 => try writer.print("v4[{f}]", .{self.v4}),
+                .v6 => try writer.print("v6[{f}]", .{self.v6}),
+            }
+        }
+
+        pub fn getDataPtr(self: *const IP) *const anyopaque {
+            return switch (self.*) {
+                .v4 => &self.v4.value,
+                .v6 => &self.v6.value,
+            };
+        }
+
+        pub fn getDataLen(self: *const IP) u32 {
+            return switch (self.*) {
+                .v4 => @sizeOf(IPv4.Value),
+                .v6 => @sizeOf(IPv6.Value),
+            };
+        }
     };
+
+    pub const TTL = u32;
+    pub const FamilyType = u16;
+
+    familyType: FamilyType,
     tableName: [*c]const u8,
     setName: [*c]const u8,
     ip: IP, 
-    familyType: u16,
+    ttl: ?TTL = null,
 
     pub fn format(self: Message, writer: anytype) !void {
-        try writer.print("ip{f} in family[{d}] -> tableName[{s}] -> setName[{s}]", .{ self.ip, self.familyType, self.tableName, self.setName });
+        var buff: [16]u8 = undefined;
+        var formattedTTL: []const u8 = buff[0..0];
+        if (self.ttl) |ttl| {
+            formattedTTL = std.fmt.bufPrint(&buff,
+                "wTTL[{d}]", .{ttl}) catch buff[0..0];
+        }
+        try writer.print(
+            "ip{f}{s} in family[{d}] -> tableName[{s}] -> setName[{s}]", 
+            .{
+                self.ip,
+                formattedTTL,
+                self.familyType,
+                self.tableName,
+                self.setName
+            });
     }
 };
 
@@ -76,16 +111,17 @@ const parseErrors = error{
     FamilyTypeNotFound, FamilyTypeTooShort,
     TableNameNotFound, TableNameTooShort, TableNameTooLong,
     SetNameNotFound, SetNameTooShort, SetNameTooLong,
-    IpNotFound, WrongIpSize
+    IpNotFound, IpTooShort, TTLTooShort, TTLTooLong
 };
 
 pub fn parse(message: []const u8) parseErrors!Message {
     var tail = message;
 
-    if (tail.len < 0) return error.FamilyTypeNotFound;
-    if (tail.len < 2) return error.FamilyTypeTooShort;
-    const familyType: u16 = std.mem.readInt(u16, tail[0..2], std.builtin.Endian.little);
-    tail = tail[2..];
+    if (tail.len == 0) return error.FamilyTypeNotFound;
+    if (tail.len < @sizeOf(Message.FamilyType))
+        return error.FamilyTypeTooShort;
+    const familyType = std.mem.readInt(Message.FamilyType, tail[0..@sizeOf(Message.FamilyType)], std.builtin.Endian.little);
+    tail = tail[@sizeOf(Message.FamilyType)..];
 
     const endTableNameIdx = std.mem.indexOf(u8, tail, "\x00") orelse return error.TableNameNotFound;
     const tableName = tail[0..endTableNameIdx];
@@ -99,24 +135,46 @@ pub fn parse(message: []const u8) parseErrors!Message {
     if (setName.len >= c.NFT_SET_MAXNAMELEN) return error.SetNameTooLong;
     tail = tail[(endSetNameIdx + 1)..];
 
-    if (tail.len == 0) return error.IpNotFound;
-    if ((tail.len == 5 or tail.len == 17) and tail[tail.len - 1] == '\x00')
-        tail = tail[0 .. tail.len - 1]; // remove optionnal trailing \0
-    if (tail.len != 4 and tail.len != 16) return error.WrongIpSize;
     var ip: Message.IP = undefined;
-    if (tail.len == 4) {
-        ip = .{
-            .v4 = .{
-                .value = std.mem.readInt(u32, tail[0..(32/8)], std.builtin.Endian.little),
-            }
-        };
-    } else {
-        ip = .{
-            .v6 = .{
-                .value = std.mem.readInt(u128, tail[0..(128/8)], std.builtin.Endian.little),
-            }
-        };
+    const IPv4Size = @sizeOf(Message.IP.IPv4.Value);
+    const IPv6Size = @sizeOf(Message.IP.IPv6.Value);
+    const TTLSize = @sizeOf(Message.TTL);
+
+    switch (tail.len) {
+        0 => return error.IpNotFound,
+        IPv4Size, IPv4Size + 1,
+        IPv4Size + TTLSize, IPv4Size + TTLSize + 1 => {
+            ip = .{
+                .v4 = .{
+                    .value = std.mem.readInt(u32, tail[0..@sizeOf(u32)],
+                        std.builtin.Endian.little),
+                }
+            };
+            tail = tail[@sizeOf(u32)..];
+        },
+        IPv6Size, IPv6Size + 1,
+        IPv6Size + TTLSize, IPv6Size + TTLSize + 1 => {
+            ip = .{
+                .v6 = .{
+                    .value = std.mem.readInt(u128, tail[0..@sizeOf(u128)],
+                        std.builtin.Endian.little),
+                }
+            };
+            tail = tail[@sizeOf(u128)..];
+        },
+        else => |len| {
+            if (len < IPv4Size) { return error.IpTooShort; }
+            else if (len < IPv6Size + TTLSize) { return error.TTLTooShort; }
+            else { return error.TTLTooLong; }
+        }
     }
 
-    return .{ .familyType = familyType, .tableName = @ptrCast(tableName), .setName = @ptrCast(setName), .ip = ip };
+    return .{
+        .familyType = familyType,
+        .tableName = @ptrCast(tableName),
+        .setName = @ptrCast(setName),
+        .ip = ip,
+        .ttl = if (tail.len <= 1) null
+            else std.mem.readInt(u32, tail[0..4], std.builtin.Endian.little),
+    };
 }
