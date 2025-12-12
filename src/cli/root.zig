@@ -2,7 +2,7 @@ const std = @import("std");
 const zli = @import("zli");
 const config = @import("../config.zig");
 
-const buildOptions = @import("buildOptions");
+const buildZon = @import("build.zig.zon");
 
 pub const Data = struct {
     needToServe: bool = false,
@@ -17,9 +17,10 @@ pub fn build(
     allocator: std.mem.Allocator
 ) !*zli.Command {
     const root = try zli.Command.init(writer, reader, allocator, .{
-        .name = buildOptions.name,
+        .name = @tagName(buildZon.name),
         .description = "Access Controlled Nftables Sets",
-        .version = buildOptions.version,
+        .version = comptime std.SemanticVersion.parse(buildZon.version)
+            catch unreachable,
     }, base);
 
     try root.addFlags(&[_]zli.Flag{
