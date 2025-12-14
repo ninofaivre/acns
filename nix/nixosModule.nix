@@ -6,6 +6,10 @@ let
   configFile = pkgs.writeTextFile {
     name = "config.zon";
     text = toZon cfg.settings;
+    checkPhase = lib.optionalString cfg.validateConfig ''
+      cp $out config.zon
+      ${lib.getExe acnsPkgs.acns} -c config.zon --validate
+    '';
   };
   etcRelativeConfigPath = "acns/config.zon";
   configFilePath = if cfg.enableReload then
@@ -22,6 +26,13 @@ in
       description = ''
         Wether to reload instead of restart on config change.
         Config file will be in /etc/acns/conf.zon
+      '';
+    };
+    validateConfig = mkOption {
+      default = true;
+      type = types.bool;
+      description = ''
+        Wether to validate config at build time by starting acns with --validate flag
       '';
     };
     settings = {
@@ -52,7 +63,7 @@ in
         '';
       };
       timeoutKernelAcksInMs = mkOption {
-        type = types.nullOr types.int;
+        type = types.nullOr types.ints.u8;
         default = null;
         description = ''
           time to wait for the acks of the kernel in ms before erroring

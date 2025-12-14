@@ -1,4 +1,4 @@
-// TODO: refectoring to accept regex, need to work out an order of priority
+// TODO: refactoring to accept regex, need to work out an order of priority
 // note : possible regex lib : mnemnion/mvzr
 const std = @import("std");
 
