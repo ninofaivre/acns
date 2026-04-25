@@ -24,7 +24,6 @@
       });
       version = "0.0.1";
     in with builtins; with env.pkgs.lib; rec {
-      # nix build .#foreign
       packages.foreign = env.package {
         meta.mainProgram = name;
         inherit name;
