@@ -24,11 +24,16 @@
       });
       version = "0.0.1";
     in with builtins; with env.pkgs.lib; rec {
-      packages.foreign = env.package {
+      packages.foreign = let
+        sources = [ ./src ./build.zig ];
+      in env.package {
         meta.mainProgram = name;
         inherit name;
         inherit version;
-        src = cleanSource ./.;
+        src = fileset.toSource {
+          root = ./.;
+          fileset = fileset.unions sources;
+        };
 
         nativeBuildInputs = with env.pkgs; [
           glibc.dev
@@ -45,7 +50,7 @@
           name = ".${name}";
           fingerprint = "0xda3d5caca4187a84";
           inherit version;
-          paths = [ "src" "build.zig" "build.zig.zon" ];
+          paths = sources ++ [ "build.zig.zon" ];
           dependencies = (import ./nix/deps.nix {
             inherit (env.pkgs) fetchFromGitHub;
           });
@@ -77,6 +82,7 @@
       apps.test = env.app [] "zig build test -- \"$@\"";
       checks.e2e = env.pkgs.testers.runNixOSTest (import ./nix/test.nix {
         acnsModule = self.nixosModules.acns;
+        acnsPkg = packages.${name};
         inherit acnsTestClient;
       });
       packages.test-driver = checks.e2e.driver;
@@ -92,6 +98,41 @@
       devShells.default = env.mkShell {
         packages = [
           acnsTestClient
+          (env.pkgs.writeShellApplication {
+            name = "e2e";
+            text = /*bash*/ ''
+              # shellcheck disable=SC2155
+              export QEMU_OPTS="-virtfs local,path=$(pwd),mount_tag=testoa,security_model=none,readonly=on"
+              if [ -n "''${1-}" ] && [ "$1" == "-w" ]; then
+                export PYTHON_STARTUP="${env.pkgs.writeText
+                  "watcher.py" /*python*/ ''
+                  from watchdog.observers import Observer
+                  from watchdog.events import FileSystemEventHandler
+
+                  class AutoTestHandler(FileSystemEventHandler):
+                      def on_moved(self, event):
+                          if event.dest_path.endswith("acns"):
+                              try:
+                                  machine.succeed("systemctl restart acns nftables")
+                                  test_script()
+                              except BaseException as e:
+                                  print("coucou")
+
+                  def start_watch():
+                      observer = Observer()
+                      observer.schedule(AutoTestHandler(), os.path.abspath("./zig-out/bin"), recursive=False)
+                      observer.daemon = True
+                      observer.start()
+
+                  start_watch()
+                  machine.start()
+                ''}"
+                (cat $PYTHON_STARTUP; cat) | ./result/bin/nixos-test-driver -I
+              else
+                ./result/bin/nixos-test-driver
+              fi
+            '';
+          })
         ];
         shellHook = ''
           export PATH="''${PATH}:''${PWD}/zig-out/bin"

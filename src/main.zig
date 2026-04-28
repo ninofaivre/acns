@@ -75,6 +75,16 @@ fn sigHupHandler(sigNum: c_int) callconv(.c) void {
     });
 }
 
+const expect = std.testing.expect;
+
+test "testoa" {
+    try expect(1 == 1);
+}
+
+test "testob" {
+    try expect(1 != 1);
+}
+
 fn serve(sockFd: i32, resources: mynft.Resources) !void {
     var buff: [2 + c.NFT_TABLE_MAXNAMELEN + c.NFT_SET_MAXNAMELEN + 4 + 1]u8 = undefined;
     var clientAddr: posix.sockaddr.storage = undefined;

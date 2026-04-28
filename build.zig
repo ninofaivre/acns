@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) !void {
         .name = @tagName(buildZon.name),
         .root_module = rootModule,
     });
+    const testExe = b.addTest(.{ .root_module = rootModule, });
 
     // ---Options--- //
     //
@@ -23,25 +24,30 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("build.zig.zon", buildZigZon);
+    rootModule.addImport("build.zig.zon", buildZigZon);
     //
     // ---Options--- //
 
     // ---Zig Deps--- //
     //
     const zliDep = b.dependency("zli", .{ .target = target });
-    exe.root_module.addImport("zli", zliDep.module("zli"));
+    rootModule.addImport("zli", zliDep.module("zli"));
     //
     // ---Zig Deps--- //
 
     // ---Link Libs--- //
     //
-    exe.linkLibC();
-    exe.linkSystemLibrary("nftnl");
-    exe.linkSystemLibrary("nl-3");
-    exe.linkSystemLibrary("mnl");
+    for ([_]*std.Build.Step.Compile {exe, testExe}) |art| {
+        art.linkLibC();
+        art.linkSystemLibrary("nftnl");
+        art.linkSystemLibrary("nl-3");
+        art.linkSystemLibrary("mnl");
+    }
     //
     // ---Link Libs--- //
 
     b.installArtifact(exe);
+    const runUnitTest = b.addRunArtifact(testExe);
+    const testStep = b.step("test", "run all tests");
+    testStep.dependOn(&runUnitTest.step);
 }

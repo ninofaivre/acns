@@ -34,7 +34,7 @@ fn sendBatch(nl: *mnl.Socket, batch: *mnl.NlmsgBatch, buff: *[2 * mnl.SOCKET_BUF
     var nAck: u8 = 0;
     // The second condition is not strictly needed as poll is only watching
     // for posix.POLL.IN event and only for one fd but I think it is best
-    // practice to check anyway, it could avoir future footgun.
+    // practice to check anyway, it could prevent future footgun.
     while (nAck != expectedNMsgAck and
         (try posix.poll(&fds, config.conf.timeoutKernelAcksInMs) > 0) and
         (fds[0].revents & posix.POLL.IN) != 0

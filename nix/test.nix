@@ -1,7 +1,32 @@
-{ acnsModule, acnsTestClient }:
+{ acnsModule, acnsPkg, acnsTestClient }:
 {
   name = "end to end test";
-  nodes.machine = { pkgs, ... }: {
+  extraPythonPackages = ps: with ps; [
+    watchdog
+  ];
+  nodes.machine = { lib, pkgs, ... }: {
+    # needed for e2e tests in dev shell
+    programs.nix-ld.enable = true;
+    # env QEMU_OPTS="-virtfs local,path=$(pwd),mount_tag=testoa,security_model=none,readonly=on" nix run .#test-driver
+    systemd.services.acns.serviceConfig.BindPaths = [
+      "-/mnt/testoa/zig-out:${acnsPkg}"
+    ];
+    systemd.mounts = [
+      {
+        what = "testoa";
+        where = "/mnt/testoa";
+        type = "9p";
+        options = "cache=none";
+        mountConfig = {
+          TimeoutSec = "1s";
+        };
+        partOf = [ "acns.service" ];
+        wantedBy = [ "acns.service" ];
+        before = [ "acns.service" ];
+      }
+    ];
+    # needed for e2e tests in dev shell
+
     environment.systemPackages = with pkgs; [
       acnsTestClient
     ];
@@ -68,32 +93,42 @@
             except: return
           assert ip not in res["elem"], f'{ip} in {res["elem"]}'
 
-    for ip4 in [
-      "42.42.42.42", "21.21.21.21",
-      "0.0.0.0", "0.42.0.42", "42.0.42.0", "42.0.0.0", "0.0.0.42",
-    ]:
-      testInsertMustSucceed("inet", "nixos-fw", "acnsTest.v4", ip4)
+    with subtest("valid ip4"):
+      for ip4 in [
+        "42.42.42.42", "21.21.21.21",
+        "0.0.0.0", "0.42.0.42", "42.0.42.0", "42.0.0.0", "0.0.0.42",
+      ]:
+        testInsertMustSucceed("inet", "nixos-fw", "acnsTest.v4", ip4)
 
-    for el in [ ("42.42.42.42", 42), ("21.21.21.21", 21), ("3.3.3.3", 3) ]:
-      ip, timeout = el
-      testInsertMustSucceedWithTimeout("inet", "nixos-fw", "acnsTestTimeout.v4", ip, timeout)
-    testInsertMustFail("inet", "nixos-fw", "acnsTestNoRight.v4", "42.42.42.42")
-    testInsertMustFail("inet", "nixos-fw", "thisSetDoesNotExist", "42.42.42.42")
-    testInsertMustFail("inet", "nixos-fw", "acnsTest.v4", "84.84.84.84", 42)
+    with subtest("valid ip4 w/timeout"):
+      for el in [ ("42.42.42.42", 42), ("21.21.21.21", 21), ("3.3.3.3", 3) ]:
+        ip, timeout = el
+        testInsertMustSucceedWithTimeout("inet", "nixos-fw", "acnsTestTimeout.v4", ip, timeout)
 
-    for ip6 in [
-      "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
-      "f:ff:fff:fff0:ff0f:f00f:ffff:0",
-      "f:f:f:f:f:f:f:0",
-      "f:f:f:f:f:f:0:0",
-      "f:0:0:0:0:0:0:0",
-      "f:f::",
-      "f::f",
-      "f::f:a",
-      "f::f:a:f",
-    ]:
-      testInsertMustSucceed("inet", "nixos-fw", "acnsTest.v6", ip6)
+    with subtest("valid ip4 forbidden set"):
+      testInsertMustFail("inet", "nixos-fw", "acnsTestNoRight.v4", "42.42.42.42")
 
-    testInsertMustFail("inet", "nixos-fw", "acnsTest.v6", "f::f:a:f::")
+    with subtest("valid ip4 not found set"):
+      testInsertMustFail("inet", "nixos-fw", "thisSetDoesNotExist", "42.42.42.42")
+
+    with subtest("valid ip4 w/ invalid timeout"):
+      testInsertMustFail("inet", "nixos-fw", "acnsTest.v4", "84.84.84.84", 42)
+
+    with subtest("valid ip6 diff format clientTest"):
+      for ip6 in [
+        "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "f:ff:fff:fff0:ff0f:f00f:ffff:0",
+        "f:f:f:f:f:f:f:0",
+        "f:f:f:f:f:f:0:0",
+        "f:0:0:0:0:0:0:0",
+        "f:f::",
+        "f::f",
+        "f::f:a",
+        "f::f:a:f",
+      ]:
+        testInsertMustSucceed("inet", "nixos-fw", "acnsTest.v6", ip6)
+
+    with subtest("invalid ip6 format clientTest"):
+      testInsertMustFail("inet", "nixos-fw", "acnsTest.v6", "f::f:a:f::")
   '';
 }
