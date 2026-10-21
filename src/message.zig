@@ -101,8 +101,8 @@ pub const Message = struct {
                 self.ip,
                 formattedTTL,
                 self.familyType,
-                self.tableName,
-                self.setName
+                std.mem.span(self.tableName),
+                std.mem.span(self.setName)
             });
     }
 };
