@@ -1,31 +1,11 @@
 { acnsModule, acnsPkg, acnsTestClient }:
 {
   name = "end to end test";
-  extraPythonPackages = ps: with ps; [
-    watchdog
-  ];
-  nodes.machine = { lib, pkgs, ... }: {
+  containers.machine = { lib, pkgs, ... }: {
     # needed for e2e tests in dev shell
-    programs.nix-ld.enable = true;
-    # env QEMU_OPTS="-virtfs local,path=$(pwd),mount_tag=testoa,security_model=none,readonly=on" nix run .#test-driver
     systemd.services.acns.serviceConfig.BindPaths = [
-      "-/mnt/testoa/zig-out:${acnsPkg}"
+      "-/zig-out/bin/acns:${acnsPkg}/bin/.acns-wrapped"
     ];
-    systemd.mounts = [
-      {
-        what = "testoa";
-        where = "/mnt/testoa";
-        type = "9p";
-        options = "cache=none";
-        mountConfig = {
-          TimeoutSec = "1s";
-        };
-        partOf = [ "acns.service" ];
-        wantedBy = [ "acns.service" ];
-        before = [ "acns.service" ];
-      }
-    ];
-    # needed for e2e tests in dev shell
 
     environment.systemPackages = with pkgs; [
       acnsTestClient
@@ -67,7 +47,7 @@
     machine.wait_for_unit("acns")
 
     def testInsertMustSucceed(family, tableName, setName, ip):
-      machine.succeed(f"sudo -u acns acnsTestClient /run/acns/acns.sock {family} {tableName} {setName} {ip}")
+      machine.succeed(f"runuser -u acns -- acnsTestClient /run/acns/acns.sock {family} {tableName} {setName} {ip}")
       jsonRes = machine.succeed(f"nft -j list set {family} {tableName} {setName}")
       res = json.loads(jsonRes)["nftables"][1]["set"]["elem"]
       if ':' in ip:
@@ -75,7 +55,7 @@
       assert ip in res, f'{ip} not in {res}'
 
     def testInsertMustSucceedWithTimeout(family, tableName, setName, ip, timeout):
-      machine.succeed(f"sudo -u acns acnsTestClient /run/acns/acns.sock {family} {tableName} {setName} {ip} {timeout}")
+      machine.succeed(f"runuser -u acns -- acnsTestClient /run/acns/acns.sock {family} {tableName} {setName} {ip} {timeout}")
       jsonRes = machine.succeed(f"nft -j list set {family} {tableName} {setName}")
       res = json.loads(jsonRes)["nftables"][1]["set"]["elem"]
       if ':' in ip:
@@ -83,7 +63,7 @@
       assert any((elem["elem"]["val"] == ip and elem["elem"]["timeout"] == timeout) for elem in res), f'{ip} with ttl {timeout} not in {res}'
 
     def testInsertMustFail(family, tableName, setName, ip, timeout=None):
-      machine.fail(f"sudo -u acns acnsTestClient /run/acns/acns.sock {family} {tableName} {setName} {ip} {' ' if timeout is None else timeout}")
+      machine.fail(f"runuser -u acns -- acnsTestClient /run/acns/acns.sock {family} {tableName} {setName} {ip} {' ' if timeout is None else timeout}")
       status, jsonRes = machine.execute(f"nft -j list set {family} {tableName} {setName}")
       if status == 0:
         res = json.loads(jsonRes)["nftables"][1]["set"]
